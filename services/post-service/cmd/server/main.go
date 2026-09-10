@@ -1,0 +1,51 @@
+package main
+
+import (
+	"fmt"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/ratelimit"
+	"github.com/gin-gonic/gin"
+	"log"
+
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/config"
+	httpcontroller "github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/controller/http"
+	postgresdatabase "github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/database/postgres"
+	redisdatabase "github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/database/redis"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/service"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	rateConfig, err := ratelimit.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	rateRedis, err := ratelimit.Client(cfg.Environment.RedisAddr, rateConfig.Timeout)
+	if err != nil {
+		log.Fatal("invalid rate limit Redis configuration")
+	}
+	defer rateRedis.Close()
+	limiter, err := ratelimit.New(rateRedis, "post-service", rateConfig.Timeout)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	postgres := postgresdatabase.New(nil)
+	redis := redisdatabase.New(nil)
+	application := service.New(postgres, redis)
+
+	controller := httpcontroller.NewController(application)
+	router := httpcontroller.NewRouter(controller, func(r *gin.Engine) {
+		if err := ratelimit.Install(r, limiter, rateConfig, "post-service"); err != nil {
+			log.Fatal(err)
+		}
+	})
+
+	fmt.Printf("Post Service listening on port %s\n", cfg.Port)
+	if err := router.Run("0.0.0.0:" + cfg.Port); err != nil {
+		log.Fatal(err)
+	}
+}

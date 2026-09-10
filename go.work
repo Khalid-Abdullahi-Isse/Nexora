@@ -1,0 +1,10 @@
+go 1.27.0
+
+use (
+	./services/auth-service
+	./services/chat-service
+	./services/notification-service
+	./services/post-service
+	./services/user-service
+	./shared
+)

@@ -1,0 +1,188 @@
+name: social-media-backend
+
+x-service-env: &service-env
+  APP_ENV: development
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: social_media
+  POSTGRES_SSLMODE: disable
+  REDIS_ADDR: redis:6379
+  RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+  RATE_LIMIT_GLOBAL_REQUESTS: ${RATE_LIMIT_GLOBAL_REQUESTS:-100}
+  RATE_LIMIT_GLOBAL_WINDOW: ${RATE_LIMIT_GLOBAL_WINDOW:-1m}
+  RATE_LIMIT_REGISTER_REQUESTS: ${RATE_LIMIT_REGISTER_REQUESTS:-3}
+  RATE_LIMIT_REGISTER_WINDOW: ${RATE_LIMIT_REGISTER_WINDOW:-10m}
+  RATE_LIMIT_WEBSOCKET_REQUESTS: ${RATE_LIMIT_WEBSOCKET_REQUESTS:-10}
+  RATE_LIMIT_WEBSOCKET_WINDOW: ${RATE_LIMIT_WEBSOCKET_WINDOW:-1m}
+  RATE_LIMIT_REDIS_TIMEOUT: ${RATE_LIMIT_REDIS_TIMEOUT:-200ms}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  JWT_SECRET: change-me
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: social-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: social_media
+    ports:
+      # Host 5432 is already occupied in this environment; PostgreSQL remains
+      # on its standard container port 5432 and is exposed locally on 15432.
+      - "15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d social_media"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    container_name: social-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    image: postgres:17-alpine
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: social_media
+      PGCONNECT_TIMEOUT: 10
+    entrypoint: ["/bin/sh", "/runner/run.sh"]
+    volumes:
+      - ./migrations/run.sh:/runner/run.sh:ro
+      - ../services/auth-service/migrations:/migrations/auth-service:ro
+      - ../services/user-service/migrations:/migrations/user-service:ro
+      - ../services/post-service/migrations:/migrations/post-service:ro
+      - ../services/chat-service/migrations:/migrations/chat-service:ro
+      - ../services/notification-service/migrations:/migrations/notification-service:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    networks: [social-network]
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: docker/auth-service.Dockerfile
+    container_name: social-auth
+    environment:
+      <<: *service-env
+      AUTH_SERVICE_PORT: 8001
+    ports: ["8001:8001"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8001/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: docker/user-service.Dockerfile
+    container_name: social-user
+    environment:
+      <<: *service-env
+      USER_SERVICE_PORT: 8002
+    ports: ["8002:8002"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8002/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  post-service:
+    build:
+      context: ..
+      dockerfile: docker/post-service.Dockerfile
+    container_name: social-post
+    environment:
+      <<: *service-env
+      POST_SERVICE_PORT: 8003
+    ports: ["8003:8003"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8003/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  chat-service:
+    build:
+      context: ..
+      dockerfile: docker/chat-service.Dockerfile
+    container_name: social-chat
+    environment:
+      <<: *service-env
+      CHAT_SERVICE_PORT: 8004
+    ports: ["8004:8004"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8004/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  notification-service:
+    build:
+      context: ..
+      dockerfile: docker/notification-service.Dockerfile
+    container_name: social-notification
+    environment:
+      <<: *service-env
+      NOTIFICATION_SERVICE_PORT: 8005
+    ports: ["8005:8005"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    networks: [social-network]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8005/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: social-media-backend_postgres_data
+  redis_data:
+    name: social-media-backend_redis_data
+
+networks:
+  social-network:
+    name: social-network
+    driver: bridge
