@@ -6,3 +6,22 @@ tmp/
 coverage.out
 .idea/
 .vscode/
+
+# Private Postman exports and runner artifacts; safe environment templates stay tracked.
+postman/environments/*.local.json
+postman/secrets/
+postman/results/
+*.postman-secrets.json
+
+# Signing keys and local secret material
+.secrets/
+*.pem
+*.key
+.env.*
+!.env.example
+
+# Python validation artifacts
+__pycache__/
+
+# Optional local Helm values may contain development credentials
+/deployments/**/*.local.yaml

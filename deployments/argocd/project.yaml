@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: social-media
+  namespace: argocd
+spec:
+  description: Social Media Backend environments only
+  sourceRepos:
+  - https://github.com/Khalid-Abdullahi-Isse/Nexora.git
+  destinations:
+  - server: https://kubernetes.default.svc
+    namespace: social-media-dev
+  - server: https://kubernetes.default.svc
+    namespace: social-media-staging
+  - server: https://kubernetes.default.svc
+    namespace: social-media-production
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  namespaceResourceWhitelist:
+  - group: ''
+    kind: ConfigMap
+  - group: ''
+    kind: Secret
+  - group: ''
+    kind: Service
+  - group: ''
+    kind: ServiceAccount
+  - group: ''
+    kind: PersistentVolumeClaim
+  - group: apps
+    kind: Deployment
+  - group: apps
+    kind: StatefulSet
+  - group: batch
+    kind: Job
+  - group: networking.k8s.io
+    kind: Ingress

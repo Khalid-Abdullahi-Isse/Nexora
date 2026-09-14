@@ -1,0 +1,1 @@
+{{ include "social.deployment" (dict "root" . "name" "notification") }}

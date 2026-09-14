@@ -1,0 +1,94 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "social.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: redis
+    spec:
+      serviceAccountName: {{ include "social.sa" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.redis.podSecurityContext | nindent 8 }}
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image | quote }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command: [sh, -ec]
+          args:
+            - >-
+              exec redis-server --dir /data --appendonly {{ ternary "yes" "no" .Values.redis.appendonly }}
+              --requirepass "$REDIS_PASSWORD"
+              {{- if .Values.redis.tls.enabled }}
+              --port 0 --tls-port {{ .Values.redis.port }}
+              --tls-cert-file /tls/tls.crt --tls-key-file /tls/tls.key
+              --tls-ca-cert-file /tls/ca.crt --tls-auth-clients no
+              {{- else }}
+              --port {{ .Values.redis.port }}
+              {{- end }}
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: REDIS_PASSWORD
+          ports:
+            - name: redis
+              containerPort: {{ .Values.redis.port }}
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
+          {{- range $kind := list "startup" "readiness" "liveness" }}
+          {{ $kind }}Probe:
+            exec:
+              command:
+                - sh
+                - -ec
+                - >-
+                  REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli -p {{ $.Values.redis.port }}
+                  {{- if $.Values.redis.tls.enabled }}
+                  --tls --cacert /tls/ca.crt --sni {{ $.Values.redis.host }}
+                  {{- end }}
+                  ping | grep -qx PONG
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: {{ if eq $kind "startup" }}60{{ else }}6{{ end }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.redis.tls.enabled }}
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ default "redis-data" .Values.redis.storage.existingClaim }}
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.redis.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.redis.tls.existingSecret }}
+            defaultMode: 0440
+        {{- end }}
+{{- end }}

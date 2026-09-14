@@ -5,20 +5,29 @@ import (
 	"net/http"
 
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/auth-service/internal/service"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/httpsecurity"
 	"github.com/gin-gonic/gin"
 )
 
-type Controller struct{ users *service.UserService }
+type Controller struct {
+	security    *Security
+	HealthCheck gin.HandlerFunc
+	users       *service.UserService
+}
 
 func NewController(users *service.UserService) *Controller { return &Controller{users: users} }
 
 func (c *Controller) Health(ctx *gin.Context) {
+	if c != nil && c.HealthCheck != nil {
+		c.HealthCheck(ctx)
+		return
+	}
 	ctx.JSON(http.StatusOK, HealthResponse{Status: "ok", Service: "auth-service"})
 }
 
 func (c *Controller) Register(ctx *gin.Context) {
 	var req RegisterRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
+	if err := httpsecurity.Decode(ctx, &req); err != nil {
 		ctx.JSON(http.StatusBadRequest, ErrorResponse{Error: APIError{Code: "VALIDATION_ERROR", Message: "Invalid email or password"}})
 		return
 	}

@@ -4,11 +4,11 @@ x-service-env: &service-env
   APP_ENV: development
   POSTGRES_HOST: postgres
   POSTGRES_PORT: 5432
-  POSTGRES_USER: postgres
-  POSTGRES_PASSWORD: postgres
+  POSTGRES_USER: app_auth
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate .env with scripts/setup-security-dev.py}
   POSTGRES_DB: social_media
   POSTGRES_SSLMODE: disable
-  REDIS_ADDR: redis:6379
+  REDIS_ADDR: redis://:${REDIS_PASSWORD:?Redis password required}@redis:6379/0
   RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
   RATE_LIMIT_GLOBAL_REQUESTS: ${RATE_LIMIT_GLOBAL_REQUESTS:-100}
   RATE_LIMIT_GLOBAL_WINDOW: ${RATE_LIMIT_GLOBAL_WINDOW:-1m}
@@ -18,7 +18,10 @@ x-service-env: &service-env
   RATE_LIMIT_WEBSOCKET_WINDOW: ${RATE_LIMIT_WEBSOCKET_WINDOW:-1m}
   RATE_LIMIT_REDIS_TIMEOUT: ${RATE_LIMIT_REDIS_TIMEOUT:-200ms}
   TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
-  JWT_SECRET: change-me
+  JWT_PUBLIC_KEYS_FILE: /keys/public-keys.json
+  JWT_ISSUER: ${JWT_ISSUER:-social-media-auth}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+  AUTH_COOKIE_INSECURE: "true"
 
 services:
   postgres:
@@ -26,14 +29,19 @@ services:
     container_name: social-postgres
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Migration password required}
       POSTGRES_DB: social_media
+      AUTH_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Auth database password required}
+      POST_DATABASE_PASSWORD: ${POST_DATABASE_PASSWORD:?Post database password required}
+      CHAT_DATABASE_PASSWORD: ${CHAT_DATABASE_PASSWORD:?Chat database password required}
+      NOTIFICATION_DATABASE_PASSWORD: ${NOTIFICATION_DATABASE_PASSWORD:?Notification database password required}
     ports:
       # Host 5432 is already occupied in this environment; PostgreSQL remains
       # on its standard container port 5432 and is exposed locally on 15432.
-      - "15432:5432"
+      - "127.0.0.1:15432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init.sh:/docker-entrypoint-initdb.d/10-runtime-roles.sh:ro
     networks: [social-network]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d social_media"]
@@ -44,37 +52,40 @@ services:
   redis:
     image: redis:8-alpine
     container_name: social-redis
+    restart: unless-stopped
     ports:
       - "127.0.0.1:6379:6379"
-    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Redis password required}
+    command: ["sh", "-c", 'exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASSWORD"']
     volumes:
       - redis_data:/data
       - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
     networks: [social-network]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping']
       interval: 5s
       timeout: 3s
       retries: 10
 
   migrate:
-    image: postgres:17-alpine
+    build:
+      context: ..
+      dockerfile: docker/migrate.Dockerfile
     restart: "no"
     environment:
-      PGHOST: postgres
-      PGPORT: 5432
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: social_media
-      PGCONNECT_TIMEOUT: 10
-    entrypoint: ["/bin/sh", "/runner/run.sh"]
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Migration password required}
+      POSTGRES_DB: social_media
+      POSTGRES_SSLMODE: disable
     volumes:
-      - ./migrations/run.sh:/runner/run.sh:ro
-      - ../services/auth-service/migrations:/migrations/auth-service:ro
-      - ../services/user-service/migrations:/migrations/user-service:ro
-      - ../services/post-service/migrations:/migrations/post-service:ro
-      - ../services/chat-service/migrations:/migrations/chat-service:ro
-      - ../services/notification-service/migrations:/migrations/notification-service:ro
+      - ../services/auth-service/migrations:/app/services/auth-service/migrations:ro
+      - ./migrations/legacy-user:/app/docker/migrations/legacy-user:ro
+      - ../services/post-service/migrations:/app/services/post-service/migrations:ro
+      - ../services/chat-service/migrations:/app/services/chat-service/migrations:ro
+      - ../services/notification-service/migrations:/app/services/notification-service/migrations:ro
     depends_on:
       postgres: {condition: service_healthy}
     networks: [social-network]
@@ -87,32 +98,21 @@ services:
     environment:
       <<: *service-env
       AUTH_SERVICE_PORT: 8001
-    ports: ["8001:8001"]
+      JWT_PRIVATE_KEY_FILE: /keys/private.pem
+      JWT_KEY_ID: ${JWT_KEY_ID:-development-1}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-168h}
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - ../.secrets/public-keys.json:/keys/public-keys.json:ro
+      - ../.secrets/private.pem:/keys/private.pem:ro
+    ports: ["127.0.0.1:8001:8001"]
     depends_on:
       postgres: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
     networks: [social-network]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8001/health || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  user-service:
-    build:
-      context: ..
-      dockerfile: docker/user-service.Dockerfile
-    container_name: social-user
-    environment:
-      <<: *service-env
-      USER_SERVICE_PORT: 8002
-    ports: ["8002:8002"]
-    depends_on:
-      postgres: {condition: service_healthy}
-      migrate: {condition: service_completed_successfully}
-    networks: [social-network]
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8002/health || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -125,10 +125,16 @@ services:
     environment:
       <<: *service-env
       POST_SERVICE_PORT: 8003
-    ports: ["8003:8003"]
+      POSTGRES_USER: app_post
+      POSTGRES_PASSWORD: ${POST_DATABASE_PASSWORD:?Runtime password required}
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - ../.secrets/public-keys.json:/keys/public-keys.json:ro
+    ports: ["127.0.0.1:8003:8003"]
     depends_on:
       postgres: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
     networks: [social-network]
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8003/health || exit 1"]
@@ -144,7 +150,12 @@ services:
     environment:
       <<: *service-env
       CHAT_SERVICE_PORT: 8004
-    ports: ["8004:8004"]
+      POSTGRES_USER: app_chat
+      POSTGRES_PASSWORD: ${CHAT_DATABASE_PASSWORD:?Runtime password required}
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - ../.secrets/public-keys.json:/keys/public-keys.json:ro
+    ports: ["127.0.0.1:8004:8004"]
     depends_on:
       postgres: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}
@@ -164,7 +175,12 @@ services:
     environment:
       <<: *service-env
       NOTIFICATION_SERVICE_PORT: 8005
-    ports: ["8005:8005"]
+      POSTGRES_USER: app_notification
+      POSTGRES_PASSWORD: ${NOTIFICATION_DATABASE_PASSWORD:?Runtime password required}
+    user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
+    volumes:
+      - ../.secrets/public-keys.json:/keys/public-keys.json:ro
+    ports: ["127.0.0.1:8005:8005"]
     depends_on:
       postgres: {condition: service_healthy}
       migrate: {condition: service_completed_successfully}

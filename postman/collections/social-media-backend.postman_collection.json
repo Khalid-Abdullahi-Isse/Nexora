@@ -1,0 +1,504 @@
+{
+  "info": {
+    "_postman_id": "77827186-9106-54d1-867a-e3a4e9232d6f",
+    "name": "Social Media Backend API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "All five implemented HTTP routes across four services. No login, refresh, CRUD, gateway or WebSocket endpoints exist yet. Service base URLs are origins (without /api/v1); all versioned routes use apiVersion. See postman/README.md for setup, limitations and maintenance."
+  },
+  "auth": {
+    "type": "noauth"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Resolve nested environment templates into request-local variables only.",
+          "// Process this request's URL dependencies; other services need not be configured.",
+          "function resolve(value, stack) {",
+          "    return String(value).replace(/{{([a-zA-Z][a-zA-Z0-9]*)}}/g, (_, key) => {",
+          "        if (stack.includes(key)) throw new Error(\"Circular variable: \" + key);",
+          "        const value = pm.variables.get(key);",
+          "        if (value === undefined || value === null || value === \"\") throw new Error(\"Missing variable: \" + key);",
+          "        const resolved = resolve(value, stack.concat(key));",
+          "        pm.variables.set(key, resolved);",
+          "        return resolved;",
+          "    });",
+          "}",
+          "const resolvedUrl = resolve(pm.request.url.toString(), []);",
+          "if (/{{|}}/.test(resolvedUrl)) throw new Error(\"Unresolved URL variable\");",
+          "if (!/^https?:\\/\\//.test(resolvedUrl)) throw new Error(\"Base URLs must use http or https\");"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test(\"Response is JSON\", () => pm.response.to.be.json);"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Auth Service",
+      "description": "Only implemented routes from services/auth-service. Registration is public; authentication APIs are not implemented.",
+      "item": [
+        {
+          "name": "01 - Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{authBaseUrl}}/health",
+            "description": "GET /health in services/auth-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis and PostgreSQL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy auth-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"auth-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    pm.expect(body.database).to.eql(\"connected\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "02 - Register Account",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
+            "description": "Creates an auth account only; no profile or tokens are returned. Set registerEmail and registerPassword in the selected environment. Email: required valid address, max 255. Password: 8\u201372 bytes (ASCII avoids rune/byte ambiguity). Reusing an existing email returns 409. Source: auth-service HTTP request.go, controller.go, response.go and service/user_service.go.",
+            "body": {
+              "mode": "raw",
+              "raw": "{{registerBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.environment.unset(\"userId\");",
+                  "const email = pm.variables.get(\"registerEmail\");",
+                  "const password = pm.variables.get(\"registerPassword\");",
+                  "if (!email || !password) throw new Error(\"Set registerEmail and registerPassword in the selected environment before registering.\");",
+                  "// Serialize values so quotes/backslashes in credentials cannot break JSON.",
+                  "pm.variables.set(\"registerBody\", JSON.stringify({email, password}));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
+                  "pm.test(\"Account contract and ID capture\", () => {",
+                  "    pm.response.to.have.status(201);",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.success).to.eql(true);",
+                  "    pm.expect(body.data.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
+                  "    pm.expect(body.data.email).to.eql(pm.variables.get(\"registerEmail\").trim().toLowerCase());",
+                  "    pm.expect(body.data.status).to.eql(\"active\");",
+                  "    pm.expect(Number.isNaN(Date.parse(body.data.created_at))).to.eql(false);",
+                  "    pm.expect(body.data).not.to.have.property(\"password\");",
+                  "    pm.expect(body.data).not.to.have.property(\"password_hash\");",
+                  "    pm.environment.set(\"userId\", body.data.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": [
+            {
+              "name": "400 - VALIDATION_ERROR (documented contract)",
+              "originalRequest": {
+                "method": "POST",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
+                "description": "Creates an auth account only; no profile or tokens are returned. Set registerEmail and registerPassword in the selected environment. Email: required valid address, max 255. Password: 8\u201372 bytes (ASCII avoids rune/byte ambiguity). Reusing an existing email returns 409. Source: auth-service HTTP request.go, controller.go, response.go and service/user_service.go.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{{registerBody}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\",\n    \"message\": \"Invalid email or password\"\n  }\n}"
+            },
+            {
+              "name": "409 - EMAIL_EXISTS (documented contract)",
+              "originalRequest": {
+                "method": "POST",
+                "auth": {
+                  "type": "noauth"
+                },
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
+                "description": "Creates an auth account only; no profile or tokens are returned. Set registerEmail and registerPassword in the selected environment. Email: required valid address, max 255. Password: 8\u201372 bytes (ASCII avoids rune/byte ambiguity). Reusing an existing email returns 409. Source: auth-service HTTP request.go, controller.go, response.go and service/user_service.go.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{{registerBody}}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Conflict",
+              "code": 409,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"EMAIL_EXISTS\",\n    \"message\": \"Email already exists\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "03 - Registration Validation Error",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
+            "description": "Intentionally omits required fields. Does not create an account, but consumes a registration rate-limit attempt.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"Validation error contract\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.success).to.eql(false);",
+                  "    pm.expect(body.error.code).to.eql(\"VALIDATION_ERROR\");",
+                  "    pm.expect(body.error.message).to.eql(\"Invalid email or password\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - Post Service",
+      "description": "Only implemented routes from services/post-service. Only health is implemented; domain models do not imply HTTP APIs.",
+      "item": [
+        {
+          "name": "01 - Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{postBaseUrl}}/health",
+            "description": "GET /health in services/post-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy post-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"post-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - Chat Service",
+      "description": "Only implemented routes from services/chat-service. Only health is implemented; domain models do not imply HTTP APIs.",
+      "item": [
+        {
+          "name": "01 - Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{chatBaseUrl}}/health",
+            "description": "GET /health in services/chat-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy chat-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"chat-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Notification Service",
+      "description": "Only implemented routes from services/notification-service. Only health is implemented; domain models do not imply HTTP APIs.",
+      "item": [
+        {
+          "name": "01 - Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{notificationBaseUrl}}/health",
+            "description": "GET /health in services/notification-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy notification-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"notification-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 - Health Checks",
+      "description": "Convenience copies of the four public health requests. No registration or credentials needed. Keep these synchronized with each service health request.",
+      "item": [
+        {
+          "name": "Auth Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{authBaseUrl}}/health",
+            "description": "GET /health in services/auth-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis and PostgreSQL."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy auth-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"auth-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    pm.expect(body.database).to.eql(\"connected\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Post Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{postBaseUrl}}/health",
+            "description": "GET /health in services/post-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy post-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"post-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Chat Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{chatBaseUrl}}/health",
+            "description": "GET /health in services/chat-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy chat-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"chat-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Notification Health",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": "{{notificationBaseUrl}}/health",
+            "description": "GET /health in services/notification-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Healthy notification-service\", () => {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.status).to.eql(\"ok\");",
+                  "    pm.expect(body.service).to.eql(\"notification-service\");",
+                  "    pm.expect(body.redis).to.eql(\"connected\");",
+                  "    ",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ]
+}

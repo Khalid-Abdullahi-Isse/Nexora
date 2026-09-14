@@ -1,0 +1,90 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "social.name" . }}-migrate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "social.labels" . | nindent 4 }}
+  annotations:
+    {{- if eq .Values.deploymentMode "argocd" }}
+    # Same-chart PostgreSQL must exist first; PreSync cannot bootstrap it.
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    {{- else }}
+    # Post-install can see new infrastructure; successful jobs remain for logs.
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "social.sa" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-postgres
+          image: {{ .Values.postgres.image | quote }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          command: [sh, -ec]
+          args:
+            - 'until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; do sleep 2; done'
+          env:
+            - name: PGHOST
+              value: {{ .Values.postgres.host | quote }}
+            - name: PGPORT
+              value: {{ .Values.postgres.port | quote }}
+            - name: PGUSER
+              value: {{ .Values.postgres.adminUser | quote }}
+            - name: PGDATABASE
+              value: {{ .Values.postgres.database | quote }}
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+      containers:
+        - name: migrate
+          image: {{ printf "%s:%s" .Values.images.migration.repository .Values.images.migration.tag | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args: [all, up]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "social.name" . }}-config
+          env:
+            # The migration CLI intentionally uses an administrator; runtime
+            # production validation forbids that identity. TLS remains configured.
+            - name: APP_ENV
+              value: test
+            - name: POSTGRES_USER
+              value: {{ .Values.postgres.adminUser | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: POSTGRES_ADMIN_PASSWORD
+          resources:
+            {{- toYaml .Values.migration.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- include "social.trustMounts" . | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- include "social.trustVolumes" . | nindent 8 }}
+{{- end }}

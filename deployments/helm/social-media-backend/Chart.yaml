@@ -1,0 +1,6 @@
+apiVersion: v2
+name: social-media-backend
+description: Four Go services, one PostgreSQL database, Redis and ordered migrations
+type: application
+version: 0.1.0
+appVersion: 0.1.0

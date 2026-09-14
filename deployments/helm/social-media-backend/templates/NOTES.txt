@@ -1,0 +1,7 @@
+Social Media Backend: {{ .Release.Name }} in {{ .Release.Namespace }}
+
+kubectl get pods,svc,jobs,pvc -n {{ .Release.Namespace }}
+kubectl port-forward -n {{ .Release.Namespace }} svc/auth-service 8001:{{ .Values.services.auth.port }}
+
+Credentials must exist in {{ .Values.secrets.existingSecret }}; JWT keys in {{ .Values.jwt.existingSecret }}.
+See docs/deployment.md for TLS, migration ordering, GitOps and rollback instructions.

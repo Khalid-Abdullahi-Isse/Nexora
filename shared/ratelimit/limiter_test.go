@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -262,6 +263,66 @@ func TestCurlSmoke(t *testing.T) {
 			if string(out) != want {
 				t.Fatalf("curl %s #%d: %s", tc.path, i, out)
 			}
+		}
+	}
+}
+
+func TestStalledRedisDeadline(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		<-done
+	}()
+	client, err := Client(listener.Addr().String(), 30*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	l, err := New(client, "stalled", 30*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	_, err = l.Check(context.Background(), Policy{"timeout", 1, time.Minute, true}, "ip:test")
+	if err == nil {
+		t.Fatal("stalled Redis unexpectedly succeeded")
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatal("Redis deadline not bounded")
+	}
+}
+
+func TestDisabledAndInvalidRedisAddress(t *testing.T) {
+	client := testRedis(t)
+	l := limiter(t, client)
+	_ = client.Close()
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Enabled = false
+	r := gin.New()
+	if err := Install(r, l, cfg, "auth-service"); err != nil {
+		t.Fatal(err)
+	}
+	r.POST("/api/v1/auth/register", func(c *gin.Context) { c.Status(201) })
+	if w := request(r, "/api/v1/auth/register", "POST", "192.0.2.1", nil); w.Code != 201 {
+		t.Fatal(w.Code)
+	}
+	for _, addr := range []string{"", ":6379", "localhost:99999", "redis://%"} {
+		if c, err := Client(addr, time.Millisecond); err == nil {
+			c.Close()
+			t.Fatalf("accepted %q", addr)
 		}
 	}
 }

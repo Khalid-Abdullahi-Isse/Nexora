@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "deploymentMode": {
+      "enum": [
+        "helm",
+        "argocd"
+      ]
+    },
+    "global": {
+      "type": "object",
+      "properties": {
+        "environment": {
+          "enum": [
+            "development",
+            "test",
+            "production"
+          ]
+        },
+        "imagePullPolicy": {
+          "enum": [
+            "Never",
+            "IfNotPresent",
+            "Always"
+          ]
+        }
+      }
+    },
+    "postgres": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "const": "social_media"
+        }
+      }
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "repository",
+          "tag"
+        ],
+        "properties": {
+          "repository": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tag": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

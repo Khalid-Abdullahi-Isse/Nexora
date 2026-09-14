@@ -1,0 +1,11 @@
+global:
+  environment: development
+  imagePullPolicy: Never
+postgres:
+  storage:
+    size: 2Gi
+    storageClass: standard
+redis:
+  storage:
+    size: 1Gi
+    storageClass: standard

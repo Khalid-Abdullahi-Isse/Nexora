@@ -4,6 +4,7 @@ package http
 import (
 	"net/http"
 
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
 	"github.com/gin-gonic/gin"
 )
 
@@ -13,7 +14,9 @@ type Service interface{}
 
 // Controller translates HTTP communication to service calls.
 type Controller struct {
-	service Service
+	Verifier    *authn.Verifier
+	HealthCheck gin.HandlerFunc
+	service     Service
 }
 
 // NewController constructs the HTTP controller.
@@ -21,7 +24,11 @@ func NewController(service Service) *Controller {
 	return &Controller{service: service}
 }
 
-// Health reports that the HTTP server is running; it does not check database readiness.
+// Health checks configured dependencies; isolated controllers retain the basic response.
 func (h *Controller) Health(c *gin.Context) {
+	if h != nil && h.HealthCheck != nil {
+		h.HealthCheck(c)
+		return
+	}
 	c.JSON(http.StatusOK, HealthResponse{Status: "ok", Service: "notification-service"})
 }

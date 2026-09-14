@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
 	"net/mail"
 	"strings"
 	"time"
@@ -75,6 +76,10 @@ func (s *UserService) FindUserByEmail(ctx context.Context, email string) (*User,
 }
 
 func (s *UserService) SetStatus(ctx context.Context, id string, status UserStatus) error {
+	if p, ok := authn.Actor(ctx); !ok || !p.HasRole("admin") || !p.Can("admin.users.manage") || !recentAdmin(p) {
+		return ErrForbidden
+	}
+
 	if _, err := uuid.Parse(id); err != nil {
 		return ErrInvalidInput
 	}

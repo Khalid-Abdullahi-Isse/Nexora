@@ -1,0 +1,46 @@
+global:
+  environment: production
+  imagePullPolicy: IfNotPresent
+images:
+  auth:
+    repository: REPLACE_WITH_REGISTRY/social-auth
+    tag: sha-REPLACE_WITH_GIT_COMMIT
+  post:
+    repository: REPLACE_WITH_REGISTRY/social-post
+    tag: sha-REPLACE_WITH_GIT_COMMIT
+  chat:
+    repository: REPLACE_WITH_REGISTRY/social-chat
+    tag: sha-REPLACE_WITH_GIT_COMMIT
+  notification:
+    repository: REPLACE_WITH_REGISTRY/social-notification
+    tag: sha-REPLACE_WITH_GIT_COMMIT
+  migration:
+    repository: REPLACE_WITH_REGISTRY/social-migrate
+    tag: sha-REPLACE_WITH_GIT_COMMIT
+config:
+  AUTH_COOKIE_INSECURE: 'false'
+  TLS_TERMINATED: 'true'
+  ALLOWED_ORIGINS: https://REPLACE_WITH_FRONTEND_HOST
+postgres:
+  sslmode: verify-full
+  tls:
+    enabled: true
+redis:
+  tls:
+    enabled: true
+ingress:
+  enabled: true
+  host: REPLACE_WITH_API_HOST
+  tls:
+  - secretName: social-media-ingress-tls
+    hosts:
+    - REPLACE_WITH_API_HOST
+services:
+  auth:
+    replicas: 2
+  post:
+    replicas: 2
+  chat:
+    replicas: 1
+  notification:
+    replicas: 1

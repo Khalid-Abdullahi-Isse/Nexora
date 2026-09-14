@@ -4,8 +4,10 @@ package envfolder
 import (
 	"bufio"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -30,7 +32,6 @@ type Config struct {
 	PostgresDB       string
 
 	RedisAddr string
-	JWTSecret string
 
 	AuthServicePort         string
 	UserServicePort         string
@@ -46,7 +47,7 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
-	return Config{
+	cfg := Config{
 		AppEnv: get("APP_ENV", "development"),
 
 		PostgresHost:     get("POSTGRES_HOST", "localhost"),
@@ -56,14 +57,17 @@ func Load() (Config, error) {
 		PostgresDB:       get("POSTGRES_DB", "social_media"),
 
 		RedisAddr: get("REDIS_ADDR", defaultRedisAddress),
-		JWTSecret: get("JWT_SECRET", "change-me"),
 
 		AuthServicePort:         get("AUTH_SERVICE_PORT", defaultAuthServicePort),
 		UserServicePort:         get("USER_SERVICE_PORT", defaultUserServicePort),
 		PostServicePort:         get("POST_SERVICE_PORT", defaultPostServicePort),
 		ChatServicePort:         get("CHAT_SERVICE_PORT", defaultChatServicePort),
 		NotificationServicePort: get("NOTIFICATION_SERVICE_PORT", defaultNotificationServicePort),
-	}, nil
+	}
+	if err := validateProduction(cfg); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func loadDotEnv() error {
@@ -132,4 +136,45 @@ func get(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func validateProduction(c Config) error {
+	if c.AppEnv != "development" && c.AppEnv != "test" && c.AppEnv != "production" {
+		return fmt.Errorf("APP_ENV must be development, test or production")
+	}
+	if c.AppEnv != "production" {
+		return nil
+	}
+	if len(c.PostgresPassword) < 24 || c.PostgresPassword == "postgres" || c.PostgresPassword == "change-me" || strings.Contains(c.PostgresPassword, "REPLACE_") {
+		return fmt.Errorf("production PostgreSQL secret required")
+	}
+	if c.PostgresUser == "" || c.PostgresUser == "postgres" {
+		return fmt.Errorf("production requires a least-privilege database identity")
+	}
+	if os.Getenv("POSTGRES_SSLMODE") != "verify-full" {
+		return fmt.Errorf("production requires POSTGRES_SSLMODE=verify-full")
+	}
+	redisURL, e := url.Parse(c.RedisAddr)
+	redisPassword := ""
+	if e == nil && redisURL.User != nil {
+		redisPassword, _ = redisURL.User.Password()
+	}
+	if e != nil || redisURL.Scheme != "rediss" || len(redisPassword) < 24 {
+		return fmt.Errorf("production Redis requires TLS")
+	}
+	enabled := true
+	if raw, ok := os.LookupEnv("RATE_LIMIT_ENABLED"); ok {
+		var err error
+		enabled, err = strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("invalid RATE_LIMIT_ENABLED")
+		}
+	}
+	if os.Getenv("AUTH_COOKIE_INSECURE") == "true" || !enabled {
+		return fmt.Errorf("insecure authentication configuration in production")
+	}
+	if os.Getenv("TLS_TERMINATED") != "true" {
+		return fmt.Errorf("production requires explicit HTTPS ingress configuration")
+	}
+	return nil
 }

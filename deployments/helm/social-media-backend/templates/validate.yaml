@@ -1,0 +1,13 @@
+{{- if eq .Values.global.environment "production" -}}
+{{- range $name, $image := .Values.images -}}
+{{- if or (eq $image.tag "latest") (not (regexMatch "^(sha-[A-Za-z0-9_-]+|v?[0-9]+\\.[0-9]+\\.[0-9]+.*)$" $image.tag)) -}}
+{{- fail (printf "production image %s must use sha-<commit> or a version tag" $name) -}}
+{{- end -}}
+{{- end -}}
+{{- if or (not .Values.postgres.tls.enabled) (not .Values.redis.tls.enabled) (ne .Values.postgres.sslmode "verify-full") -}}
+{{- fail "production requires PostgreSQL verify-full and PostgreSQL/Redis TLS" -}}
+{{- end -}}
+{{- if or (ne (toString .Values.config.AUTH_COOKIE_INSECURE) "false") (ne (toString .Values.config.TLS_TERMINATED) "true") (ne (toString .Values.config.RATE_LIMIT_ENABLED) "true") -}}
+{{- fail "production requires secure cookies, TLS termination and rate limiting" -}}
+{{- end -}}
+{{- end -}}

@@ -3,13 +3,16 @@ package postgres
 import (
 	"context"
 	"errors"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/auth-service/internal/service"
 	"github.com/google/uuid"
 	driver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 // Runs against an explicitly selected migrated database; all changes roll back.
@@ -18,7 +21,7 @@ func TestAccountAndAccessOwnership(t *testing.T) {
 	if dsn == "" {
 		t.Skip("set AUTH_TEST_DATABASE_URL to a migrated PostgreSQL database")
 	}
-	db, err := gorm.Open(driver.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(driver.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,6 +54,14 @@ func TestAccountAndAccessOwnership(t *testing.T) {
 		t.Fatal("duplicate constraint mapping", err)
 	}
 	tx.RollbackTo("duplicate")
+	actor, err := users.CreateUser(ctx, service.CreateUserInput{Email: uuid.NewString() + "@example.com", Password: "integration-password"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Exec("INSERT INTO user_roles(user_id,role_id) SELECT ?,id FROM roles WHERE name='admin'", actor.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx = authn.WithPrincipal(ctx, authn.Principal{UserID: actor.ID, Roles: []string{"admin"}, Permissions: []string{"admin.users.manage"}, AuthTime: time.Now().Unix()})
 	roles := service.NewRoleService(database)
 	permissions := service.NewPermissionService(database)
 	role, err := roles.CreateRole(ctx, "test-"+uuid.NewString())
@@ -76,7 +87,7 @@ func TestAccountAndAccessOwnership(t *testing.T) {
 		t.Fatal("missing permission", err)
 	}
 	listed, err := roles.ListUserRoles(ctx, user.ID)
-	if err != nil || len(listed) != 1 {
+	if err != nil || len(listed) != 2 {
 		t.Fatal("role listing", err)
 	}
 	if err := users.SetStatus(ctx, user.ID, service.UserStatusSuspended); err != nil {

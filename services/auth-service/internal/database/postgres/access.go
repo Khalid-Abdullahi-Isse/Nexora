@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/auth-service/internal/service"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -11,7 +12,9 @@ var _ service.RoleDatabase = (*Database)(nil)
 var _ service.PermissionDatabase = (*Database)(nil)
 
 func (d *Database) CreateRole(ctx context.Context, role *service.Role) error {
-	return databaseError(d.db.WithContext(ctx).Create(&Role{ID: role.ID, Name: role.Name, Description: role.Description}).Error)
+	return d.adminMutation(ctx, "", "ROLE_CREATED", role.ID.String(), func(tx *gorm.DB) error {
+		return tx.Create(&Role{ID: role.ID, Name: role.Name, Description: role.Description}).Error
+	})
 }
 func (d *Database) FindRoleByName(ctx context.Context, name string) (*service.Role, error) {
 	var row Role
@@ -29,10 +32,14 @@ func (d *Database) AssignRoleToUser(ctx context.Context, userID, roleID string) 
 	if err != nil {
 		return service.ErrInvalidInput
 	}
-	return databaseError(d.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&UserRole{UserID: uid, RoleID: rid}).Error)
+	return d.adminMutation(ctx, userID, "ROLE_ASSIGNED", roleID, func(tx *gorm.DB) error {
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&UserRole{UserID: uid, RoleID: rid}).Error
+	})
 }
 func (d *Database) RemoveRoleFromUser(ctx context.Context, userID, roleID string) error {
-	return databaseError(d.db.WithContext(ctx).Where("user_id = ? AND role_id = ?", userID, roleID).Delete(&UserRole{}).Error)
+	return d.adminMutation(ctx, userID, "ROLE_REMOVED", roleID, func(tx *gorm.DB) error {
+		return tx.Where("user_id = ? AND role_id = ?", userID, roleID).Delete(&UserRole{}).Error
+	})
 }
 func (d *Database) ListUserRoles(ctx context.Context, userID string) ([]service.Role, error) {
 	var rows []Role
@@ -47,7 +54,9 @@ func (d *Database) ListUserRoles(ctx context.Context, userID string) ([]service.
 	return roles, nil
 }
 func (d *Database) CreatePermission(ctx context.Context, permission *service.Permission) error {
-	return databaseError(d.db.WithContext(ctx).Create(&Permission{ID: permission.ID, Code: permission.Code, Description: permission.Description}).Error)
+	return d.adminMutation(ctx, "", "PERMISSION_CREATED", permission.ID.String(), func(tx *gorm.DB) error {
+		return tx.Create(&Permission{ID: permission.ID, Code: permission.Code, Description: permission.Description}).Error
+	})
 }
 func (d *Database) AssignPermissionToRole(ctx context.Context, roleID, permissionID string) error {
 	rid, err := uuid.Parse(roleID)
@@ -58,7 +67,9 @@ func (d *Database) AssignPermissionToRole(ctx context.Context, roleID, permissio
 	if err != nil {
 		return service.ErrInvalidInput
 	}
-	return databaseError(d.db.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&RolePermission{RoleID: rid, PermissionID: pid}).Error)
+	return d.adminMutation(ctx, "", "PERMISSION_ASSIGNED", permissionID, func(tx *gorm.DB) error {
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&RolePermission{RoleID: rid, PermissionID: pid}).Error
+	})
 }
 func (d *Database) CheckUserPermission(ctx context.Context, userID, code string) (bool, error) {
 	var count int64

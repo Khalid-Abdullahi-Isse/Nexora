@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
 	"github.com/google/uuid"
 	"strings"
 	"unicode/utf8"
@@ -20,11 +21,11 @@ type RoleService struct{ db RoleDatabase }
 func NewRoleService(db RoleDatabase) *RoleService { return &RoleService{db: db} }
 
 func validText(value string, limit int) bool {
-	return value != "" && utf8.RuneCountInString(value) <= limit && !strings.ContainsRune(value, 0)
+	return value != "" && utf8.RuneCountInString(value) <= limit && !strings.ContainsAny(value, " \t\r\n\x00")
 }
 func validIDs(ids ...string) bool {
 	for _, id := range ids {
-		if _, err := uuid.Parse(id); err != nil {
+		if parsed, err := uuid.Parse(id); err != nil || parsed == uuid.Nil {
 			return false
 		}
 	}
@@ -32,6 +33,10 @@ func validIDs(ids ...string) bool {
 }
 
 func (s *RoleService) CreateRole(ctx context.Context, name string) (*Role, error) {
+	if p, ok := authn.Actor(ctx); !ok || !p.HasRole("admin") || !p.Can("admin.users.manage") || !recentAdmin(p) {
+		return nil, ErrForbidden
+	}
+
 	name = strings.ToLower(strings.TrimSpace(name))
 	if !validText(name, 100) {
 		return nil, ErrInvalidInput
@@ -50,12 +55,20 @@ func (s *RoleService) FindRole(ctx context.Context, name string) (*Role, error) 
 	return s.db.FindRoleByName(ctx, name)
 }
 func (s *RoleService) AssignRoleToUser(ctx context.Context, userID, roleID string) error {
+	if p, ok := authn.Actor(ctx); !ok || !p.HasRole("admin") || !p.Can("admin.users.manage") || !recentAdmin(p) {
+		return ErrForbidden
+	}
+
 	if !validIDs(userID, roleID) {
 		return ErrInvalidInput
 	}
 	return s.db.AssignRoleToUser(ctx, userID, roleID)
 }
 func (s *RoleService) RemoveRoleFromUser(ctx context.Context, userID, roleID string) error {
+	if p, ok := authn.Actor(ctx); !ok || !p.HasRole("admin") || !p.Can("admin.users.manage") || !recentAdmin(p) {
+		return ErrForbidden
+	}
+
 	if !validIDs(userID, roleID) {
 		return ErrInvalidInput
 	}

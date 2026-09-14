@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
 	"github.com/google/uuid"
 	"strings"
 )
@@ -18,6 +19,10 @@ func NewPermissionService(db PermissionDatabase) *PermissionService {
 	return &PermissionService{db: db}
 }
 func (s *PermissionService) CreatePermission(ctx context.Context, code string) (*Permission, error) {
+	if p, ok := authn.Actor(ctx); !ok || !p.HasRole("admin") || !p.Can("admin.users.manage") || !recentAdmin(p) {
+		return nil, ErrForbidden
+	}
+
 	code = strings.ToLower(strings.TrimSpace(code))
 	if !validText(code, 150) {
 		return nil, ErrInvalidInput
@@ -29,6 +34,10 @@ func (s *PermissionService) CreatePermission(ctx context.Context, code string) (
 	return permission, nil
 }
 func (s *PermissionService) AssignPermissionToRole(ctx context.Context, roleID, permissionID string) error {
+	if p, ok := authn.Actor(ctx); !ok || !p.HasRole("admin") || !p.Can("admin.users.manage") || !recentAdmin(p) {
+		return ErrForbidden
+	}
+
 	if !validIDs(roleID, permissionID) {
 		return ErrInvalidInput
 	}

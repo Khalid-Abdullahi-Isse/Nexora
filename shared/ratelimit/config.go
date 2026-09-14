@@ -17,15 +17,17 @@ type Policy struct {
 	FailClosed bool
 }
 type Config struct {
-	Enabled                     bool
-	Timeout                     time.Duration
-	TrustedProxies              []string
-	Global, Register, WebSocket Policy
+	Enabled                                      bool
+	Timeout                                      time.Duration
+	TrustedProxies                               []string
+	Global, Register, WebSocket                  Policy
+	Login, LoginAccount, Refresh, RefreshAccount Policy
 }
 
 // Load uses the environment populated by the shared Envfolder loader.
 func Load() (Config, error) {
 	c := Config{Enabled: true, Timeout: 200 * time.Millisecond,
+		Login: Policy{"login", 10, time.Minute, true}, LoginAccount: Policy{"login-account", 20, 10 * time.Minute, true}, Refresh: Policy{"refresh", 30, time.Minute, true}, RefreshAccount: Policy{"refresh-account", 5, time.Minute, true},
 		Global:    Policy{"global", 100, time.Minute, false},
 		Register:  Policy{"register", 3, 10 * time.Minute, true},
 		WebSocket: Policy{"websocket", 10, time.Minute, true}}
@@ -49,7 +51,7 @@ func Load() (Config, error) {
 	for _, entry := range []struct {
 		name string
 		p    *Policy
-	}{{"GLOBAL", &c.Global}, {"REGISTER", &c.Register}, {"WEBSOCKET", &c.WebSocket}} {
+	}{{"GLOBAL", &c.Global}, {"REGISTER", &c.Register}, {"WEBSOCKET", &c.WebSocket}, {"LOGIN", &c.Login}, {"LOGIN_ACCOUNT", &c.LoginAccount}, {"REFRESH", &c.Refresh}, {"REFRESH_ACCOUNT", &c.RefreshAccount}} {
 		if v, ok := os.LookupEnv("RATE_LIMIT_" + entry.name + "_REQUESTS"); ok {
 			n, e := strconv.ParseInt(v, 10, 64)
 			if e != nil {

@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "social.name" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "social.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+data:
+  APP_ENV: {{ .Values.global.environment | quote }}
+  POSTGRES_HOST: {{ .Values.postgres.host | quote }}
+  POSTGRES_PORT: {{ .Values.postgres.port | quote }}
+  POSTGRES_DB: {{ .Values.postgres.database | quote }}
+  POSTGRES_SSLMODE: {{ .Values.postgres.sslmode | quote }}
+  {{- if .Values.postgres.tls.enabled }}
+  PGSSLROOTCERT: /trust/postgres/ca.crt
+  {{- end }}
+  {{- if .Values.redis.tls.enabled }}
+  SSL_CERT_FILE: /trust/redis/ca.crt
+  {{- end }}
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+{{- if .Values.postgres.enabled }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "social.name" . }}-postgres-init
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+data:
+  10-runtime-roles.sh: |
+    {{- .Files.Get "files/postgres-init.sh" | nindent 4 }}
+{{- end }}

@@ -1,0 +1,210 @@
+global:
+  environment: development
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+deploymentMode: helm
+images:
+  auth:
+    repository: social-auth
+    tag: latest
+  post:
+    repository: social-post
+    tag: latest
+  chat:
+    repository: social-chat
+    tag: latest
+  notification:
+    repository: social-notification
+    tag: latest
+  migration:
+    repository: social-migrate
+    tag: latest
+services:
+  auth:
+    enabled: true
+    replicas: 1
+    port: 8001
+    databaseUser: app_auth
+    passwordKey: AUTH_DATABASE_PASSWORD
+    resources: {}
+  post:
+    enabled: true
+    replicas: 1
+    port: 8003
+    databaseUser: app_post
+    passwordKey: POST_DATABASE_PASSWORD
+    resources: {}
+  chat:
+    enabled: true
+    replicas: 1
+    port: 8004
+    databaseUser: app_chat
+    passwordKey: CHAT_DATABASE_PASSWORD
+    resources: {}
+  notification:
+    enabled: true
+    replicas: 1
+    port: 8005
+    databaseUser: app_notification
+    passwordKey: NOTIFICATION_DATABASE_PASSWORD
+    resources: {}
+config:
+  JWT_PUBLIC_KEYS_FILE: /keys/public-keys.json
+  JWT_ISSUER: social-media-auth
+  JWT_KEY_ID: development-1
+  REFRESH_TOKEN_TTL: 168h
+  ALLOWED_ORIGINS: http://localhost:3000
+  AUTH_COOKIE_INSECURE: 'true'
+  TRUSTED_PROXIES: ''
+  RATE_LIMIT_ENABLED: 'true'
+  RATE_LIMIT_REDIS_TIMEOUT: 200ms
+  RATE_LIMIT_GLOBAL_REQUESTS: '100'
+  RATE_LIMIT_GLOBAL_WINDOW: 1m
+  RATE_LIMIT_REGISTER_REQUESTS: '3'
+  RATE_LIMIT_REGISTER_WINDOW: 10m
+  RATE_LIMIT_WEBSOCKET_REQUESTS: '10'
+  RATE_LIMIT_WEBSOCKET_WINDOW: 1m
+  RATE_LIMIT_LOGIN_REQUESTS: '10'
+  RATE_LIMIT_LOGIN_WINDOW: 1m
+  RATE_LIMIT_LOGIN_ACCOUNT_REQUESTS: '20'
+  RATE_LIMIT_LOGIN_ACCOUNT_WINDOW: 10m
+  RATE_LIMIT_REFRESH_REQUESTS: '30'
+  RATE_LIMIT_REFRESH_WINDOW: 1m
+  RATE_LIMIT_REFRESH_ACCOUNT_REQUESTS: '5'
+  RATE_LIMIT_REFRESH_ACCOUNT_WINDOW: 1m
+  JWT_PRIVATE_KEY_FILE: /keys/private.pem
+  TLS_TERMINATED: 'false'
+secrets:
+  existingSecret: social-media-backend-secrets
+  create: false
+  developmentData: {}
+jwt:
+  existingSecret: jwt-keys
+serviceAccount:
+  create: true
+  name: ''
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+    - ALL
+  seccompProfile:
+    type: RuntimeDefault
+terminationGracePeriodSeconds: 30
+rolloutVersion: ''
+resources:
+  enabled: true
+  defaults:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+probes:
+  startup:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 36
+  readiness:
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 12
+postgres:
+  enabled: true
+  image: postgres:17-alpine
+  host: postgres
+  database: social_media
+  port: 5432
+  sslmode: disable
+  adminUser: postgres
+  storage:
+    size: 10Gi
+    storageClass: ''
+    existingClaim: ''
+  tls:
+    enabled: false
+    existingSecret: postgres-tls
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    runAsGroup: 70
+    fsGroup: 70
+    seccompProfile:
+      type: RuntimeDefault
+redis:
+  enabled: true
+  image: redis:8-alpine
+  host: redis
+  port: 6379
+  appendonly: true
+  storage:
+    size: 2Gi
+    storageClass: ''
+    existingClaim: ''
+  tls:
+    enabled: false
+    existingSecret: redis-tls
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+migration:
+  enabled: true
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+ingress:
+  enabled: false
+  className: nginx
+  host: ''
+  annotations: {}
+  tls: []
+  routes:
+  - path: /api/v1/auth
+    service: auth
+    pathType: Prefix
+  - path: /api/v1/posts
+    service: post
+    pathType: Prefix
+  - path: /api/v1/chats
+    service: chat
+    pathType: Prefix
+  - path: /api/v1/notifications
+    service: notification
+    pathType: Prefix

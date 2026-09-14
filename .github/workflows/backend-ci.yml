@@ -1,0 +1,301 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'social-media-backend/**'
+      - '.github/workflows/backend-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'social-media-backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+    working-directory: social-media-backend
+
+env:
+  GOFLAGS: -mod=readonly
+
+jobs:
+  go-quality:
+    name: Go Quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: social-media-backend/go.work
+          cache: true
+          cache-dependency-path: |
+            social-media-backend/**/go.sum
+            social-media-backend/go.work.sum
+      - name: Check formatting without modifying files
+        run: |
+          files=$(find . -type f -name '*.go' -not -path './vendor/*' -not -path '*/vendor/*' -print0 | xargs -0 -r gofmt -l)
+          if [[ -n "$files" ]]; then
+            echo '::error::Go files need formatting. Run gofmt on the listed files:'
+            printf '%s\n' "$files"
+            exit 1
+          fi
+      - name: Check workspace coverage and run Go vet
+        run: |
+          # Keep the explicit CI matrix synchronized with the workspace.
+          go work edit -json > "$RUNNER_TEMP/go-work.json"
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          expected = {'shared', 'services/auth-service', 'services/post-service',
+                      'services/chat-service', 'services/notification-service'}
+          work = json.loads(Path(os.environ['RUNNER_TEMP'], 'go-work.json').read_text())
+          actual = {str(Path(item['DiskPath'])) for item in work['Use']}
+          discovered = {str(p.parent) for p in Path('.').rglob('go.mod') if 'vendor' not in p.parts}
+          if actual != expected or discovered != expected:
+              raise SystemExit(f'Update all CI module matrices: expected={expected}, workspace={actual}, discovered={discovered}')
+          PYCODE
+          # These are the module patterns used by `make check`.
+          go vet ./shared/... ./services/auth-service/... ./services/post-service/... ./services/chat-service/... ./services/notification-service/...
+
+  unit-tests:
+    name: Unit Tests (${{ matrix.module }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [shared, services/auth-service, services/post-service, services/chat-service, services/notification-service]
+    defaults:
+      run:
+        shell: bash
+        working-directory: social-media-backend/${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: social-media-backend/go.work
+          cache: true
+          cache-dependency-path: |
+            social-media-backend/**/go.sum
+            social-media-backend/go.work.sum
+      - name: Run unit tests with race detection and coverage
+        env:
+          CGO_ENABLED: '1'
+        run: go test -race -count=1 -timeout=10m -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Summarize coverage
+        run: go tool cover -func=coverage.out
+      - name: Upload module coverage
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-${{ strategy.job-index }}
+          path: social-media-backend/${{ matrix.module }}/coverage.out
+          if-no-files-found: warn
+          retention-days: 14
+
+  module-validation:
+    name: Go Module Validation (${{ matrix.module }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [shared, services/auth-service, services/post-service, services/chat-service, services/notification-service]
+    defaults:
+      run:
+        shell: bash
+        working-directory: social-media-backend/${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: social-media-backend/go.work
+          cache: true
+          cache-dependency-path: |
+            social-media-backend/**/go.sum
+            social-media-backend/go.work.sum
+      - name: Verify downloaded modules
+        env:
+          GOWORK: 'off'
+        run: go mod verify
+      - name: Require tidy module manifests without writing changes
+        env:
+          GOWORK: 'off'
+        run: |
+          if ! go mod tidy -diff; then
+            echo "::error::Module $PWD needs dependency attention. Review the error or diff above, run GOWORK=off go mod tidy in this module, and commit the reviewed go.mod/go.sum changes."
+            exit 1
+          fi
+
+  security:
+    name: Security Scan (${{ matrix.module }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [shared, services/auth-service, services/post-service, services/chat-service, services/notification-service]
+    defaults:
+      run:
+        shell: bash
+        working-directory: social-media-backend/${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: social-media-backend/go.work
+          cache: true
+          cache-dependency-path: |
+            social-media-backend/**/go.sum
+            social-media-backend/go.work.sum
+      - name: Install official Go vulnerability scanner
+        env:
+          GOWORK: 'off'
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+      - name: Scan module dependencies and reachable code
+        # Docker builds each module independently, so scan that dependency graph.
+        env:
+          GOWORK: 'off'
+        run: govulncheck ./...
+
+  build:
+    name: Build Services
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: social-media-backend/go.work
+          cache: true
+          cache-dependency-path: |
+            social-media-backend/**/go.sum
+            social-media-backend/go.work.sum
+      - name: Build every service binary
+        run: |
+          mkdir -p "$RUNNER_TEMP/backend-bin"
+          status=0
+          for service in auth-service post-service chat-service notification-service; do
+            echo "::group::Build $service"
+            go build -C "services/$service" -o "$RUNNER_TEMP/backend-bin/$service" ./cmd/server || status=1
+            echo '::endgroup::'
+          done
+          exit "$status"
+      - name: Build migration tooling using the existing Makefile target
+        if: ${{ !cancelled() }}
+        run: make migrate-tool
+
+  migrations:
+    name: Migration Validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check filenames, matching pairs, duplicate versions and sequence gaps
+        run: |
+          python3 - <<'PYCODE'
+          import re
+          from pathlib import Path
+
+          # Match the migration tool's six-digit sequential filename convention.
+          pattern = re.compile(r'([0-9]{6})_([a-z][a-z0-9_]*)\.(up|down)\.sql')
+          required = {Path('services') / service / 'migrations' for service in
+                      ('auth-service', 'post-service', 'chat-service', 'notification-service')}
+          required.add(Path('docker/migrations/legacy-user'))
+          directories = required | set(Path('services').glob('*/migrations'))
+          directories |= {p.parent for p in Path('docker/migrations').rglob('*.sql')}
+          errors = []
+          for directory in sorted(directories):
+              files = sorted(directory.glob('*.sql'))
+              if not files:
+                  errors.append(f'{directory}: missing directory or no SQL migrations')
+                  continue
+              versions = {}
+              for file in files:
+                  match = pattern.fullmatch(file.name)
+                  if not match or int(match[1]) == 0:
+                      errors.append(f'{file}: expected NNNNNN_name.up.sql or NNNNNN_name.down.sql, starting at 000001')
+                      continue
+                  version, name, direction = int(match[1]), match[2], match[3]
+                  pair = versions.setdefault(version, {})
+                  if direction in pair:
+                      errors.append(f'{file}: duplicate {direction} migration version')
+                  pair[direction] = name
+              for version, pair in sorted(versions.items()):
+                  if set(pair) != {'up', 'down'} or pair.get('up') != pair.get('down'):
+                      errors.append(f'{directory}/{version:06d}: matching up/down names required')
+              if sorted(versions) != list(range(1, len(versions) + 1)):
+                  errors.append(f'{directory}: migration versions must be contiguous from 000001')
+              print(f'{directory}: checked {len(files)} SQL files')
+          if errors:
+              for error in errors:
+                  print(f'::error::{error}')
+              raise SystemExit(1)
+          PYCODE
+
+  helm:
+    name: Helm Validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@v5.0.1
+        with:
+          version: v4.3.0
+      - name: Install validation script dependency in an isolated environment
+        run: |
+          python3 -m venv "$RUNNER_TEMP/helm-validation"
+          "$RUNNER_TEMP/helm-validation/bin/python" -m pip install PyYAML==6.0.3
+      - name: Lint and render all chart environments
+        # Runs helm lint for values.yaml, values-dev.yaml, values-staging.yaml,
+        # and values-production.yaml; helm template for both deployment modes;
+        # and semantic/negative checks. Rendering does not deploy or sync ArgoCD.
+        run: '"$RUNNER_TEMP/helm-validation/bin/python" scripts/validate-deployment.py'
+
+  docker:
+    name: Docker Build (${{ matrix.image }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [auth-service, post-service, chat-service, notification-service, migrate]
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4.3.0
+      - name: Build image without publishing
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: ./social-media-backend
+          file: ./social-media-backend/docker/${{ matrix.image }}.Dockerfile
+          push: false
+          load: false
+          tags: backend-ci/${{ matrix.image }}:${{ github.sha }}
+          cache-from: type=gha,scope=backend-ci-${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=backend-ci-${{ matrix.image }}
