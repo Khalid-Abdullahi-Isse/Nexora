@@ -4,12 +4,32 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - 'social-media-backend/**'
+      - '**/*.go'
+      - '**/go.mod'
+      - '**/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'services/**'
+      - 'shared/**'
+      - 'docker/**'
+      - 'deployments/**'
+      - 'scripts/**'
+      - 'Makefile'
       - '.github/workflows/backend-ci.yml'
   push:
     branches: [main]
     paths:
-      - 'social-media-backend/**'
+      - '**/*.go'
+      - '**/go.mod'
+      - '**/go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'services/**'
+      - 'shared/**'
+      - 'docker/**'
+      - 'deployments/**'
+      - 'scripts/**'
+      - 'Makefile'
       - '.github/workflows/backend-ci.yml'
 
 permissions:
@@ -22,7 +42,6 @@ concurrency:
 defaults:
   run:
     shell: bash
-    working-directory: social-media-backend
 
 env:
   GOFLAGS: -mod=readonly
@@ -38,11 +57,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version-file: social-media-backend/go.work
+          go-version-file: go.work
           cache: true
           cache-dependency-path: |
-            social-media-backend/**/go.sum
-            social-media-backend/go.work.sum
+            **/go.sum
+            go.work.sum
       - name: Check formatting without modifying files
         run: |
           files=$(find . -type f -name '*.go' -not -path './vendor/*' -not -path '*/vendor/*' -print0 | xargs -0 -r gofmt -l)
@@ -80,18 +99,18 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: social-media-backend/${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version-file: social-media-backend/go.work
+          go-version-file: go.work
           cache: true
           cache-dependency-path: |
-            social-media-backend/**/go.sum
-            social-media-backend/go.work.sum
+            **/go.sum
+            go.work.sum
       - name: Run unit tests with race detection and coverage
         env:
           CGO_ENABLED: '1'
@@ -103,7 +122,7 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: coverage-${{ strategy.job-index }}
-          path: social-media-backend/${{ matrix.module }}/coverage.out
+          path: ${{ matrix.module }}/coverage.out
           if-no-files-found: warn
           retention-days: 14
 
@@ -118,18 +137,18 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: social-media-backend/${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version-file: social-media-backend/go.work
+          go-version-file: go.work
           cache: true
           cache-dependency-path: |
-            social-media-backend/**/go.sum
-            social-media-backend/go.work.sum
+            **/go.sum
+            go.work.sum
       - name: Verify downloaded modules
         env:
           GOWORK: 'off'
@@ -154,18 +173,18 @@ jobs:
     defaults:
       run:
         shell: bash
-        working-directory: social-media-backend/${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version-file: social-media-backend/go.work
+          go-version-file: go.work
           cache: true
           cache-dependency-path: |
-            social-media-backend/**/go.sum
-            social-media-backend/go.work.sum
+            **/go.sum
+            go.work.sum
       - name: Install official Go vulnerability scanner
         env:
           GOWORK: 'off'
@@ -186,11 +205,11 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@v7.0.0
         with:
-          go-version-file: social-media-backend/go.work
+          go-version-file: go.work
           cache: true
           cache-dependency-path: |
-            social-media-backend/**/go.sum
-            social-media-backend/go.work.sum
+            **/go.sum
+            go.work.sum
       - name: Build every service binary
         run: |
           mkdir -p "$RUNNER_TEMP/backend-bin"
@@ -292,8 +311,8 @@ jobs:
       - name: Build image without publishing
         uses: docker/build-push-action@v7.3.0
         with:
-          context: ./social-media-backend
-          file: ./social-media-backend/docker/${{ matrix.image }}.Dockerfile
+          context: .
+          file: ./docker/${{ matrix.image }}.Dockerfile
           push: false
           load: false
           tags: backend-ci/${{ matrix.image }}:${{ github.sha }}
