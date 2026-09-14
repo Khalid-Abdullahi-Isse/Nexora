@@ -87,44 +87,61 @@ jobs:
           PYCODE
           # These are the module patterns used by `make check`.
           go vet ./shared/... ./services/auth-service/... ./services/post-service/... ./services/chat-service/... ./services/notification-service/...
-
   unit-tests:
-    name: Unit Tests (${{ matrix.module }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        module: [shared, services/auth-service, services/post-service, services/chat-service, services/notification-service]
-    defaults:
-      run:
-        shell: bash
-        working-directory: ${{ matrix.module }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@v7.0.0
-        with:
-          go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            **/go.sum
-            go.work.sum
-      - name: Run unit tests with race detection and coverage
-        env:
-          CGO_ENABLED: '1'
-        run: go test -race -count=1 -timeout=10m -covermode=atomic -coverprofile=coverage.out ./...
-      - name: Summarize coverage
-        run: go tool cover -func=coverage.out
-      - name: Upload module coverage
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: coverage-${{ strategy.job-index }}
-          path: ${{ matrix.module }}/coverage.out
-          if-no-files-found: warn
-          retention-days: 14
+   name: Unit Tests (${{ matrix.module }})
+   runs-on: ubuntu-24.04
+   timeout-minutes: 25
+ 
+   strategy:
+     fail-fast: false
+     matrix:
+       module:
+         - shared
+         - services/auth-service
+         - services/post-service
+         - services/chat-service
+         - services/notification-service
+ 
+   defaults:
+     run:
+       shell: bash
+       working-directory: ${{ matrix.module }}
+ 
+   steps:
+     - uses: actions/checkout@v7.0.1
+       with:
+         persist-credentials: false
+ 
+     - uses: actions/setup-go@v7.0.0
+       with:
+         go-version-file: go.work
+         cache: true
+         cache-dependency-path: |
+           **/go.sum
+           go.work.sum
+ 
+     - name: Install Redis for integration tests
+       run: |
+         sudo apt-get update
+         sudo apt-get install -y redis-server
+         redis-server --version
+ 
+     - name: Run unit tests with race detection and coverage
+       env:
+         CGO_ENABLED: '1'
+       run: go test -race -count=1 -timeout=10m -covermode=atomic -coverprofile=coverage.out ./...
+ 
+     - name: Summarize coverage
+       run: go tool cover -func=coverage.out
+ 
+     - name: Upload module coverage
+       if: ${{ !cancelled() }}
+       uses: actions/upload-artifact@v7.0.1
+       with:
+         name: coverage-${{ strategy.job-index }}
+         path: ${{ matrix.module }}/coverage.out
+         if-no-files-found: warn
+         retention-days: 14
 
   module-validation:
     name: Go Module Validation (${{ matrix.module }})
