@@ -20,6 +20,15 @@ spec:
     - host: {{ required "ingress.host is required" .Values.ingress.host | quote }}
       http:
         paths:
+          {{- if .Values.kong.enabled }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kong-gateway
+                port:
+                  number: {{ .Values.kong.proxy.httpPort }}
+          {{- else }}
           {{- range .Values.ingress.routes }}
           {{- $svc := index $.Values.services .service }}
           {{- if $svc.enabled }}
@@ -30,6 +39,7 @@ spec:
                 name: {{ .service }}-service
                 port:
                   number: {{ $svc.port }}
+          {{- end }}
           {{- end }}
           {{- end }}
 {{- end }}

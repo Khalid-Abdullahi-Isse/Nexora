@@ -51,6 +51,9 @@ for env in ('default', 'dev', 'staging', 'production'):
             main = spec['containers'][0]
             if 'ports' in main:
                 assert all(k in main for k in ('startupProbe', 'readinessProbe', 'livenessProbe'))
+            if main['name'] == 'post':
+                assert main['readinessProbe']['httpGet']['path'] == '/ready'
+                assert main['livenessProbe']['httpGet']['path'] == '/health'
             if main['name'] in ('auth', 'post', 'chat', 'notification', 'migrate') and env == 'dev':
                 assert main['imagePullPolicy'] == 'Never'
             if main['name'] in ('post', 'chat', 'notification'):

@@ -25,7 +25,9 @@ func TestRateLimitWiring(t *testing.T) {
 	}
 	cfg.Enabled = true
 	cfg.TrustedProxies = nil
-	router := NewRouter(nil, func(r *gin.Engine) {
+	controller := NewController(nil)
+	controller.HealthCheck = func(c *gin.Context) { c.Status(200) }
+	router := NewRouter(controller, func(r *gin.Engine) {
 		if err := ratelimit.Install(r, limiter, cfg, "post-service"); err != nil {
 			t.Fatal(err)
 		}
@@ -35,6 +37,7 @@ func TestRateLimitWiring(t *testing.T) {
 		status       int
 	}{
 		{"GET", "/health", 200},
+		{"GET", "/ready", 200},
 		{"GET", "/missing", 404},
 	} {
 		w := httptest.NewRecorder()

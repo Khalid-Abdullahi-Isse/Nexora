@@ -5,14 +5,19 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RegisterRoutes registers the existing health endpoint and reserves the API group.
 func RegisterRoutes(router *gin.Engine, controller *Controller) {
 	router.GET("/health", controller.Health)
-	api := router.Group("/api/v1/posts")
+	router.GET("/ready", controller.Ready)
+	api := router.Group("/api/v1")
+	api.GET("/posts", controller.ListPosts)
+	api.GET("/posts/:id", controller.GetPost)
+	api.GET("/users/:userId/posts", controller.GetUserPosts)
 	var verifier *authn.Verifier
 	if controller != nil {
 		verifier = controller.Verifier
 	}
-	api.Use(verifier.Middleware())
-	// Future routes inherit authentication; each operation must also enforce permission and ownership.
+	protected := api.Group("", verifier.Middleware())
+	protected.POST("/posts", controller.CreatePost)
+	protected.PATCH("/posts/:id", controller.UpdatePost)
+	protected.DELETE("/posts/:id", controller.DeletePost)
 }

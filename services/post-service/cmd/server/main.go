@@ -68,7 +68,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer sqlDB.Close()
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			log.Print("Post Service database close failed")
+		}
+	}()
+	log.Print("Post Service connected to PostgreSQL successfully")
 	postgres := postgresdatabase.New(db)
 	redis := redisdatabase.New(redisClient)
 	application := service.New(postgres, redis)
@@ -88,5 +93,7 @@ func run() error {
 	}
 
 	fmt.Printf("Post Service listening on port %s\n", cfg.Port)
-	return server.Run("0.0.0.0:"+cfg.Port, router)
+	err = server.Run("0.0.0.0:"+cfg.Port, router)
+	log.Print("Post Service shutdown completed")
+	return err
 }

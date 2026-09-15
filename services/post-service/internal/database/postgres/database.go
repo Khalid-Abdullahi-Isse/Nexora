@@ -8,8 +8,7 @@ type Database struct {
 	db *gorm.DB
 }
 
-// New constructs PostgreSQL database. Database operations are intentionally not
-// implemented during the architecture refactor.
+// New constructs the PostgreSQL repository using the shared connection pool.
 func New(db *gorm.DB) *Database {
 	return &Database{db: db}
 }

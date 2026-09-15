@@ -58,7 +58,7 @@ func Install(r *gin.Engine, l *Limiter, cfg Config, service string) error {
 	login := l.Middleware(cfg.Login, IP)
 	refresh := l.Middleware(cfg.Refresh, IP)
 	r.Use(func(c *gin.Context) {
-		if c.Request.Method == http.MethodGet && c.FullPath() == "/health" {
+		if c.Request.Method == http.MethodGet && (c.FullPath() == "/health" || (service == "post-service" && c.FullPath() == "/ready")) {
 			c.Next()
 			return
 		}

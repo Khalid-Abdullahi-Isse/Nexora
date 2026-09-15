@@ -1,0 +1,21 @@
+{{- if .Values.kong.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: kong-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "social.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.kong.proxy.type }}
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: kong
+  ports:
+    - name: http
+      port: {{ .Values.kong.proxy.httpPort }}
+      targetPort: proxy-http
+    - name: https
+      port: {{ .Values.kong.proxy.httpsPort }}
+      targetPort: proxy-https
+{{- end }}

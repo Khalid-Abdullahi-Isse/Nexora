@@ -1,0 +1,12 @@
+{{- if .Values.kong.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-gateway-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "social.labels" . | nindent 4 }}
+data:
+  kong.yml: |
+    {{- include "social.kong.config" . | nindent 4 }}
+{{- end }}

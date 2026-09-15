@@ -2,6 +2,10 @@
 package http
 
 import (
+	"context"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/models"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/post-service/internal/service"
+	"github.com/google/uuid"
 	"net/http"
 
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
@@ -9,8 +13,13 @@ import (
 )
 
 // Service is the business-layer boundary available to HTTP controllers.
-// Controller operations will be added only when APIs are implemented.
-type Service interface{}
+type Service interface {
+	CreatePost(context.Context, service.Changes) (models.Post, error)
+	GetPost(context.Context, uuid.UUID) (models.Post, error)
+	ListPosts(context.Context, *uuid.UUID, int, int) ([]models.Post, int64, error)
+	UpdatePost(context.Context, uuid.UUID, service.Changes) (models.Post, error)
+	DeletePost(context.Context, uuid.UUID) error
+}
 
 // Controller translates HTTP communication to service calls.
 type Controller struct {
@@ -24,11 +33,14 @@ func NewController(service Service) *Controller {
 	return &Controller{service: service}
 }
 
-// Health checks configured dependencies; isolated controllers retain the basic response.
+// Health is liveness only; dependency failures must not trigger restart loops.
 func (h *Controller) Health(c *gin.Context) {
-	if h != nil && h.HealthCheck != nil {
-		h.HealthCheck(c)
+	c.JSON(http.StatusOK, HealthResponse{Status: "ok", Service: "post-service"})
+}
+func (h *Controller) Ready(c *gin.Context) {
+	if h == nil || h.HealthCheck == nil {
+		c.JSON(503, gin.H{"status": "not_ready"})
 		return
 	}
-	c.JSON(http.StatusOK, HealthResponse{Status: "ok", Service: "post-service"})
+	h.HealthCheck(c)
 }
