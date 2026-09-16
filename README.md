@@ -40,3 +40,37 @@ Future technologies:
 All five servers use shared Redis rate limiting, with stricter registration
 limits and health-check exemptions. See [Rate Limiting](RATE_LIMITING.md) for
 policies, environment variables, Docker/Kubernetes guidance and isolated tests.
+
+
+## API Gateway
+
+Kong is the single entry point for the backend. Auth and each microservice retain
+JWT validation and business authorization. Kong adds routing, CORS, request limits,
+correlation IDs, access logs and TLS support without another database.
+
+```text
+Postman → localhost:8000 → Kong → auth-service:8001
+                              → post-service:8003
+                              → chat-service:8004
+                              → notification-service:8005
+                                   ↓
+                              PostgreSQL / Redis
+```
+
+Deploy with `./scripts/kind-deploy.sh`, then expose the whole backend with:
+
+```bash
+kubectl --context kind-social-media -n social-media-dev \
+  port-forward svc/kong-gateway 8000:8000
+```
+
+Test `GET http://localhost:8000/api/v1/auth/health`.
+See [API Gateway](docs/API_GATEWAY.md) for Docker startup, Helm/ArgoCD configuration,
+route mappings, security, health checks and exact Postman requests. Import the
+[gateway Postman collection](postman/collections/kong-gateway.postman_collection.json).
+Chat and notification business APIs remain unimplemented; their health routes work.
+Older direct-service examples in this README are for standalone debugging; use the
+gateway collection and port 8000 for normal Compose/Kubernetes access.
+
+Chat service REST/WebSocket API, configuration, security and deployment:
+[Chat service guide](docs/CHAT_SERVICE.md).

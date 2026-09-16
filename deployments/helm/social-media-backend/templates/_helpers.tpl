@@ -144,7 +144,7 @@ spec:
           {{- range $kind, $settings := $root.Values.probes }}
           {{ $kind }}Probe:
             httpGet:
-              path: {{ if and (eq $name "post") (eq $kind "readiness") }}/ready{{ else }}/health{{ end }}
+              path: {{ if and (or (eq $name "post") (eq $name "chat")) (eq $kind "readiness") }}/ready{{ else }}/health{{ end }}
               port: http
             {{- toYaml $settings | nindent 12 }}
           {{- end }}

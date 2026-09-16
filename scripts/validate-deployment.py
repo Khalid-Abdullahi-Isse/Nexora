@@ -58,6 +58,29 @@ for env in ('default', 'dev', 'staging', 'production'):
                 assert main['imagePullPolicy'] == 'Never'
             if main['name'] in ('post', 'chat', 'notification'):
                 assert volumes['keys']['secret']['items'] == [{'key': 'public-keys.json', 'path': 'public-keys.json'}]
+        gateway = yaml.safe_load(index['ConfigMap', 'kong-gateway-config']['data']['kong.yml'])
+        assert gateway['_format_version'] == '3.0'
+        assert not gateway.get('consumers'), 'JWT remains in Go'
+        upstreams = {s['name']: s for s in gateway['services']}
+        for name, port in [('auth', 8001), ('post', 8003), ('chat', 8004), ('notification', 8005)]:
+            service = upstreams[name + '-service']
+            assert service['host'] == name + '-service' and service['port'] == port
+            assert service['routes'][0]['strip_path'] is False
+            assert upstreams[name + '-health']['path'] == '/health'
+        kong = index['Deployment', 'kong-gateway']['spec']['template']['spec']['containers'][0]
+        kong_env = {v['name']: v['value'] for v in kong['env']}
+        assert kong_env['KONG_DATABASE'] == 'off'
+        assert kong_env['KONG_ADMIN_LISTEN'] in ('off', '127.0.0.1:8001')
+        proxy = index['Service', 'kong-gateway']
+        assert proxy['spec']['type'] == 'ClusterIP'
+        assert {p['port'] for p in proxy['spec']['ports']} == {8000, 8443}
+        plugins = {p['name']: p['config'] for p in gateway['plugins']}
+        assert '*' not in plugins['cors']['origins']
+        assert plugins['rate-limiting']['policy'] == 'local'
+        assert plugins['request-size-limiting']['allowed_payload_size'] == 16
+        if ('Ingress', 'social-media-backend') in index:
+            paths = index['Ingress', 'social-media-backend']['spec']['rules'][0]['http']['paths']
+            assert len(paths) == 1 and paths[0]['backend']['service']['name'] == 'kong-gateway'
         config = index['ConfigMap', 'social-media-backend-config']['data']
         assert config['POSTGRES_DB'] == 'social_media'
         assert config['POSTGRES_HOST'] == 'postgres'
@@ -73,7 +96,10 @@ for env in ('default', 'dev', 'staging', 'production'):
         assert 'initContainers' in job['spec']['template']['spec']
         print(f'{env}/{mode}: {len(docs)} resources passed semantic checks')
 # Invalid production tags and accidental additional databases must be rejected.
-for overrides in (['--set', 'postgres.database=another_database'],
+for overrides in (['--set', 'kong.rateLimit.minute=0'],
+                  ['--set-string', 'config.ALLOWED_ORIGINS=*'],
+                  ['-f', str(CHART / 'values-production.yaml'), '--set', 'kong.admin.enabled=true'],
+                  ['--set', 'postgres.database=another_database'],
                   ['-f', str(CHART / 'values-production.yaml'), '--set', 'images.auth.tag=latest']):
     result = subprocess.run(['helm', 'template', 'social-media', str(CHART), *overrides], capture_output=True)
     assert result.returncode != 0, 'Expected invalid configuration to fail'

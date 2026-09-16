@@ -118,9 +118,8 @@ the Pod specification. Do not use timestamp values in ArgoCD templates.
 | `values-production.yaml` | Same security requirements; auth/post have two replicas |
 
 The Go loader supports `development`, `test`, and `production`, not `staging`;
-staging therefore runs with `APP_ENV=production`. Chat and notification remain at
-one replica: their current WebSocket scaffolding does not demonstrate cross-Pod
-fanout. Increase replicas only after validating application behavior.
+staging therefore runs with `APP_ENV=production`. Chat and notification default to one replica. Chat now supports Redis-backed
+cross-Pod fanout; see [chat service](CHAT_SERVICE.md). Notification remains a scaffold.
 
 Per-service resources merge with `resources.defaults`; PostgreSQL, Redis and the
 migration Job have separate requests/limits. `postgres.storage` and `redis.storage`
@@ -215,8 +214,8 @@ but require real hostnames, TLS Secrets, and an installed ingress controller.
 `className: nginx` is a configurable example, not an installed controller.
 Routes preserve `/api/v1/auth`, `/api/v1/posts`, `/api/v1/chats`, and
 `/api/v1/notifications`; there is no rewrite and no database/cache route.
-`/health` stays internal. There are currently no registered chat/notification
-WebSocket routes; templates cannot create missing application endpoints.
+`/health` stays internal. Chat registers `/api/v1/chats/ws`, already covered by the Kong chat prefix.
+Notification still has no registered WebSocket route.
 
 When WebSocket handlers are implemented, add their actual paths through
 `ingress.routes`. Choose a controller supporting HTTP Upgrade and configure its
@@ -404,3 +403,28 @@ publicly without configuring authentication and trusted TLS. The remote `main`
 branch must contain `deployments/helm/social-media-backend/Chart.yaml` before the
 dev Application can render and synchronize. Local working-tree changes alone are
 invisible to ArgoCD.
+
+
+## Chat rollout performed on 2026-09-16
+
+Local context `kind-social-media`, namespace `social-media-dev`, Helm release
+`social-media` revision **6** now runs `social-chat:chat-v1-20260916`.
+The migration image is `social-migrate:chat-v1-20260916`.
+
+For this existing release, the Helm migration template supports optional
+`migration.helmHook: post-install,pre-upgrade` and `migration.jobName` overrides.
+The rollout used `social-media-backend-migrate-chat-v1-20260916`, retaining the
+previous migration job and running migration 000003 before updating chat pods.
+Default hook behavior and ArgoCD hook ordering remain unchanged. Use a new unique
+job name for another rollout when retaining prior job resources is required.
+
+Existing Helm values were reused; only chat/migration image tags and migration
+hook settings were overridden. Other service pods were not restarted. A database
+backup was saved locally with mode 0600 before migration. Migration version is 3,
+dirty=false. Live verification through Kong used real auth-service registration
+and login, then conversation creation, authenticated WebSocket messaging, a read
+receipt and REST history. All four gateway health endpoints passed. Two unique
+verification accounts and their test conversation were retained. No existing data
+or previous migration job was deleted.
+
+This was a local Helm rollout. No Git push or ArgoCD synchronization was performed.

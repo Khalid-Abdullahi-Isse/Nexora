@@ -1,5 +1,17 @@
 # Postman API Collection
 
+## Kong Gateway (current Compose/Kubernetes workflow)
+
+Import `collections/kong-gateway.postman_collection.json` and use
+`http://localhost:8000` for every request. Run `./scripts/kong-port-forward.sh`
+for kind. This collection includes login, refresh, authenticated requests and posts.
+See [API Gateway](../docs/API_GATEWAY.md) for exact headers, bodies and routing.
+
+The collection documented below is the older registration/health-only collection
+for standalone service debugging. Its direct host ports are not published by the
+current Docker Compose setup.
+
+
 ## Overview
 
 This collection covers **every implemented HTTP route** in Social Media Backend:
@@ -27,8 +39,8 @@ The source of truth is `services/<service>/internal/controller/http/routes.go`, 
 ## Environments
 
 - **local**: native Go processes on localhost, ports 8001, 8003, 8004 and 8005 (the configured defaults).
-- **docker**: Postman/Newman runs on the host and uses published localhost ports 8001, 8003, 8004 and 8005. Docker DNS names such as `auth-service` are not reachable from ordinary host Postman. For a runner inside `social-network`, override service base URLs with the corresponding Compose DNS name and container port.
-- **development**, **staging**, **production**: HTTPS `*.example.com` placeholder domains, explicitly labeled in the environment names. Replace these with your actual deployment addresses before use. No gateway is present in this repository.
+- **docker** (legacy template): assumes direct localhost ports 8001, 8003, 8004 and 8005; use the gateway collection for the current Compose setup. Docker DNS names such as `auth-service` are not reachable from ordinary host Postman. For a runner inside `social-network`, override service base URLs with the corresponding Compose DNS name and container port.
+- **development**, **staging**, **production**: HTTPS `*.example.com` placeholder domains, explicitly labeled in the environment names. Replace these with your actual deployment addresses before use. For current gateway deployments, use the Kong collection above.
 
 All service base URLs are **origins without a trailing slash or API prefix**. For example, `authBaseUrl={{protocol}}://{{host}}:8001`. This keeps `/health` unversioned and registration at `{{authBaseUrl}}/api/{{apiVersion}}/auth/register`.
 
@@ -120,3 +132,6 @@ Verified on 2026-09-11 against existing local Docker containers, without rebuild
 - A separate duplicate registration returned 409 `EMAIL_EXISTS`; exported `userId` was confirmed.
 - One new test account remains because the API provides no delete operation. Temporary credentials and populated verification exports were removed.
 - Login, token refresh and resource read/update/delete cannot be exercised because those routes do not exist. Live results describe the running containers, which may differ from concurrently edited source.
+
+Chat REST collection: `collections/chat-service.postman_collection.json`.
+WebSocket URL, authentication and event examples: [Chat service](../docs/CHAT_SERVICE.md).

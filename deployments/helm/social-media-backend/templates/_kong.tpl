@@ -17,14 +17,14 @@ services:
       - name: {{ $name }}-api
         paths:
         {{- range $paths }}
-          - {{ printf "~^%s(?:/|$)" . | quote }}
+          - {{ printf "~%s(?:/|$)" . | quote }}
         {{- end }}
         strip_path: false
         preserve_host: false
       {{- if eq $name "auth" }}
       - name: auth-sensitive
         paths:
-          - '~^/api/v1/auth/(?:login|register|refresh)/?$'
+          - '~/api/v1/auth/(?:login|register|refresh)/?$'
         methods: [POST]
         regex_priority: 20
         strip_path: false
@@ -48,9 +48,9 @@ services:
     routes:
       - name: {{ $name }}-health
         paths:
-          - {{ printf "~^%s$" (index $.Values.kong.healthPaths $name) | quote }}
+          - {{ printf "~%s$" (index $.Values.kong.healthPaths $name) | quote }}
           {{- if eq $name "auth" }}
-          - '~^/health$'
+          - '~/health$'
           {{- end }}
         methods: [GET, OPTIONS]
         regex_priority: 100

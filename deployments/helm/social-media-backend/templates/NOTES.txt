@@ -1,7 +1,13 @@
 Social Media Backend: {{ .Release.Name }} in {{ .Release.Namespace }}
 
 kubectl get pods,svc,jobs,pvc -n {{ .Release.Namespace }}
+{{- if .Values.kong.enabled }}
+kubectl --context kind-social-media port-forward -n {{ .Release.Namespace }} svc/kong-gateway 8000:{{ .Values.kong.proxy.httpPort }}
+Postman base URL: http://localhost:8000
+See docs/API_GATEWAY.md for routes, CSRF headers and the gateway collection.
+{{- else }}
 kubectl port-forward -n {{ .Release.Namespace }} svc/auth-service 8001:{{ .Values.services.auth.port }}
+{{- end }}
 
 Credentials must exist in {{ .Values.secrets.existingSecret }}; JWT keys in {{ .Values.jwt.existingSecret }}.
 See docs/deployment.md for TLS, migration ordering, GitOps and rollback instructions.

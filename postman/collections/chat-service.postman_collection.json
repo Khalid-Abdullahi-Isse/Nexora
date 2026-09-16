@@ -1,0 +1,119 @@
+{
+  "info": {
+    "name": "Nexora Chat Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "REST through Kong. WebSocket: {{ws_base_url}}/api/v1/chats/ws; Authorization: Bearer {{access_token}}. Browser: protocols [\"chat.v1\", \"bearer.\" + accessToken]. Never use query tokens. See docs/CHAT_SERVICE.md for lifecycle, receipts and event examples."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "ws_base_url",
+      "value": "ws://localhost:8000"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "participant_id",
+      "value": ""
+    },
+    {
+      "key": "conversation_id",
+      "value": ""
+    },
+    {
+      "key": "message_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Create direct conversation",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/chats/conversations",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"participantId\": \"{{participant_id}}\"\n}"
+        }
+      }
+    },
+    {
+      "name": "List conversations",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/chats/conversations?limit=30",
+        "header": []
+      }
+    },
+    {
+      "name": "Get conversation",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/chats/conversations/{{conversation_id}}",
+        "header": []
+      }
+    },
+    {
+      "name": "Message history",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/chats/conversations/{{conversation_id}}/messages?limit=30",
+        "header": []
+      }
+    },
+    {
+      "name": "Send message",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/chats/conversations/{{conversation_id}}/messages",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"content\": \"Hello\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Mark read",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/api/v1/chats/messages/{{message_id}}/read",
+        "header": []
+      }
+    },
+    {
+      "name": "Delete own message",
+      "request": {
+        "method": "DELETE",
+        "url": "{{base_url}}/api/v1/chats/messages/{{message_id}}",
+        "header": []
+      }
+    }
+  ]
+}

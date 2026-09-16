@@ -33,9 +33,21 @@ for service in auth post chat notification migrate; do
   [[ "$service" != migrate ]] || dockerfile=docker/migrate.Dockerfile
   docker build -f "$dockerfile" -t "social-$service:latest" .
 done
+load_image() {
+  # Docker's containerd store can export an OCI index with unpulled platforms.
+  # Import the host platform explicitly instead of kind's --all-platforms.
+  local arch
+  arch="$(docker version --format '{{.Server.Arch}}')"
+  while read -r node; do
+    docker save "$1" | docker exec -i "$node" ctr -n k8s.io images import --platform "linux/$arch" -
+  done < <(kind get nodes --name "$CLUSTER")
+}
 for service in auth post chat notification migrate; do
-  kind load docker-image "social-$service:latest" --name "$CLUSTER"
+  load_image "social-$service:latest"
 done
+KONG_IMAGE="$(python3 -c 'import yaml; print(yaml.safe_load(open("deployments/helm/social-media-backend/values.yaml"))["kong"]["image"])')"
+docker pull "$KONG_IMAGE"
+load_image "$KONG_IMAGE"
 
 # Generate once, reuse on subsequent deployments. Never source .env as shell code.
 # These independent kind credentials do not modify the Compose development setup.

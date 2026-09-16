@@ -11,3 +11,17 @@
 {{- fail "production requires secure cookies, TLS termination and rate limiting" -}}
 {{- end -}}
 {{- end -}}
+
+{{- if .Values.kong.enabled -}}
+{{- range splitList "," .Values.config.ALLOWED_ORIGINS -}}
+{{- if or (contains "*" .) (eq (trim .) "") -}}
+{{- fail "Kong requires explicit nonempty ALLOWED_ORIGINS" -}}
+{{- end -}}
+{{- if and (eq $.Values.global.environment "production") (not (hasPrefix "https://" (trim .))) -}}
+{{- fail "production CORS origins require HTTPS" -}}
+{{- end -}}
+{{- end -}}
+{{- if and (eq .Values.global.environment "production") .Values.kong.admin.enabled -}}
+{{- fail "Kong Admin API must be disabled in production" -}}
+{{- end -}}
+{{- end -}}

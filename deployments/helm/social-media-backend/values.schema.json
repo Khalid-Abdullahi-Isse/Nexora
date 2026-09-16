@@ -54,6 +54,57 @@
           }
         }
       }
+    },
+    "kong": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxBodyKilobytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rateLimit": {
+          "type": "object",
+          "properties": {
+            "minute": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "authMinute": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "proxy": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "ClusterIP",
+                "NodePort",
+                "LoadBalancer"
+              ]
+            },
+            "httpPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "httpsPort": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        }
+      }
     }
   }
 }
