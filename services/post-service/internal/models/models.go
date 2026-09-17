@@ -8,11 +8,12 @@ import (
 )
 
 type Post struct {
-	ID           uuid.UUID
-	AuthorUserID uuid.UUID
-	Content      string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID           uuid.UUID `json:"id" gorm:"type:uuid;primaryKey"`
+	AuthorUserID uuid.UUID `json:"user_id" gorm:"column:author_user_id;type:uuid"`
+	Content      string    `json:"content"`
+	ImageURL     *string   `json:"image_url"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 type Comment struct {

@@ -9,3 +9,11 @@ redis:
   storage:
     size: 1Gi
     storageClass: standard
+
+config:
+  # Actual pod CIDR of kind-social-media; keep this aligned with get nodes.
+  # The development cluster is trusted. Never use 0.0.0.0/0.
+  TRUSTED_PROXIES: '10.244.0.0/24'
+kong:
+  admin:
+    enabled: false

@@ -1,0 +1,102 @@
+{{- if .Values.kong.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kong-gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "social.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.kong.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: kong
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: kong
+      annotations:
+        checksum/config: {{ include "social.kong.config" . | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kong
+          image: {{ .Values.kong.image | quote }}
+          imagePullPolicy: {{ .Values.kong.imagePullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          ports:
+            - {name: proxy-http, containerPort: 8000}
+            - {name: proxy-https, containerPort: 8443}
+            - {name: status, containerPort: 8100}
+          env:
+            - {name: KONG_DATABASE, value: "off"}
+            - {name: KONG_DECLARATIVE_CONFIG, value: /kong/declarative/kong.yml}
+            - {name: KONG_PREFIX, value: /tmp/kong}
+            - {name: KONG_PROXY_LISTEN, value: "0.0.0.0:8000, 0.0.0.0:8443 ssl"}
+            - name: KONG_ADMIN_LISTEN
+              value: {{ ternary "127.0.0.1:8001" "off" .Values.kong.admin.enabled | quote }}
+            - {name: KONG_ADMIN_GUI_LISTEN, value: "off"}
+            - {name: KONG_STATUS_LISTEN, value: "0.0.0.0:8100"}
+            - {name: KONG_NGINX_WORKER_PROCESSES, value: "2"}
+            - {name: KONG_PROXY_ACCESS_LOG, value: "/dev/stdout gateway"}
+            - {name: KONG_PROXY_ERROR_LOG, value: /dev/stderr}
+            - {name: KONG_ADMIN_ACCESS_LOG, value: "off"}
+            - {name: KONG_ADMIN_ERROR_LOG, value: /dev/stderr}
+            - {name: KONG_LOG_LEVEL, value: warn}
+            - {name: KONG_HEADERS, value: "off"}
+            - name: KONG_TRUSTED_IPS
+              value: {{ .Values.kong.trustedIPs | quote }}
+            - name: KONG_NGINX_HTTP_CLIENT_MAX_BODY_SIZE
+              value: {{ printf "%vk" .Values.kong.maxBodyKilobytes | quote }}
+            - name: KONG_NGINX_HTTP_LARGE_CLIENT_HEADER_BUFFERS
+              value: {{ .Values.kong.headerBuffers | quote }}
+            - name: KONG_NGINX_HTTP_LOG_FORMAT
+              value: >-
+                gateway escape=json '{"method":"$request_method","path":"$uri","status":$status,"upstream":"$upstream_addr","duration":$request_time,"request_id":"$http_x_request_id"}'
+            {{- if .Values.kong.tls.existingSecret }}
+            - {name: KONG_SSL_CERT, value: /kong/tls/tls.crt}
+            - {name: KONG_SSL_CERT_KEY, value: /kong/tls/tls.key}
+            {{- end }}
+          startupProbe:
+            httpGet: {path: /status/ready, port: status}
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet: {path: /status/ready, port: status}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /status, port: status}
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.kong.resources | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /kong/declarative, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+            {{- if .Values.kong.tls.existingSecret }}
+            - {name: tls, mountPath: /kong/tls, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: kong-gateway-config
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.kong.tls.existingSecret }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.kong.tls.existingSecret }}
+        {{- end }}
+{{- end }}

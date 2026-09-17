@@ -35,6 +35,11 @@ func TestChatMembershipMatrix(t *testing.T) {
 	outsider := a
 	outsider.UserID = uuid.NewString()
 	outsider.Roles = []string{"admin"}
+	for _, p := range []authn.Principal{a, b, outsider} {
+		if e := tx.Exec("INSERT INTO users(id,email,password_hash) VALUES(?,?,?)", p.UserID, p.UserID+"@example.test", "unused").Error; e != nil {
+			t.Fatal(e)
+		}
+	}
 	c := Conversation{ID: uuid.New(), Type: ConversationTypeDirect, CreatedByUserID: uuid.MustParse(a.UserID), Timestamps: Timestamps{CreatedAt: time.Now(), UpdatedAt: time.Now()}}
 	if e = tx.Create(&c).Error; e != nil {
 		t.Fatal(e)

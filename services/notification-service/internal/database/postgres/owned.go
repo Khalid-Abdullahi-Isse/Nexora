@@ -5,6 +5,7 @@ import (
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/ownership"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"time"
 )
@@ -21,7 +22,7 @@ func (d *Database) MarkOwnedRead(ctx context.Context, p authn.Principal, id stri
 	if e := ownership.Authorize(p, "notifications.manage-own", id); e != nil {
 		return e
 	}
-	return ownership.Result(d.db.WithContext(ctx).Model(&Notification{}).Where("id = ? AND user_id = ?", id, p.UserID).Updates(map[string]any{"read_at": time.Now().UTC(), "updated_at": time.Now().UTC()}))
+	return ownership.Result(d.db.WithContext(ctx).Model(&Notification{}).Where("id = ? AND user_id = ?", id, p.UserID).Updates(map[string]any{"read_at": gorm.Expr("COALESCE(read_at, ?)", time.Now().UTC()), "updated_at": time.Now().UTC()}))
 }
 func (d *Database) DeleteOwnedNotification(ctx context.Context, p authn.Principal, id string) error {
 	if e := ownership.Authorize(p, "notifications.manage-own", id); e != nil {

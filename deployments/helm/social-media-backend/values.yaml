@@ -43,17 +43,31 @@ services:
     resources: {}
   notification:
     enabled: true
-    replicas: 1
+    replicas: 2
     port: 8005
     databaseUser: app_notification
     passwordKey: NOTIFICATION_DATABASE_PASSWORD
     resources: {}
 config:
+  NOTIFICATION_STREAM: events:notifications
+  NOTIFICATION_CONSUMER_GROUP: notification-service
+  NOTIFICATION_RETRY_IDLE: 30s
+  NOTIFICATION_MAX_ATTEMPTS: '10'
+  NOTIFICATION_PAGE_SIZE: '30'
+  WS_PONG_TIMEOUT: 60s
+  WS_MAX_MESSAGE_SIZE: '16384'
+  CHAT_MESSAGE_MAX_LENGTH: '4096'
+  WS_SEND_QUEUE: '64'
+  WS_MAX_CONNECTIONS_PER_USER: '8'
+  WS_WRITE_TIMEOUT: '10s'
+  WS_READ_TIMEOUT: '60s'
+  WS_PING_INTERVAL: '25s'
+  CHAT_RATE_LIMIT: '120'
   JWT_PUBLIC_KEYS_FILE: /keys/public-keys.json
   JWT_ISSUER: social-media-auth
   JWT_KEY_ID: development-1
   REFRESH_TOKEN_TTL: 168h
-  ALLOWED_ORIGINS: http://localhost:3000
+  ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001
   AUTH_COOKIE_INSECURE: 'true'
   TRUSTED_PROXIES: ''
   RATE_LIMIT_ENABLED: 'true'
@@ -131,7 +145,7 @@ postgres:
   sslmode: disable
   adminUser: postgres
   storage:
-    size: 10Gi
+    size: 2Gi
     storageClass: ''
     existingClaim: ''
   tls:
@@ -158,7 +172,7 @@ redis:
   port: 6379
   appendonly: true
   storage:
-    size: 2Gi
+    size: 1Gi
     storageClass: ''
     existingClaim: ''
   tls:
@@ -199,6 +213,9 @@ ingress:
   - path: /api/v1/auth
     service: auth
     pathType: Prefix
+  - path: /api/v1/users
+    service: post
+    pathType: Prefix
   - path: /api/v1/posts
     service: post
     pathType: Prefix
@@ -208,3 +225,47 @@ ingress:
   - path: /api/v1/notifications
     service: notification
     pathType: Prefix
+
+# Kong OSS, DB-less: no gateway database or ingress controller required.
+kong:
+  enabled: true
+  image: kong:3.9.1
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  proxy:
+    type: ClusterIP
+    httpPort: 8000
+    httpsPort: 8443
+  admin:
+    # Loopback within the pod only; no Admin Service is created.
+    enabled: false
+  tls:
+    # Optional kubernetes.io/tls Secret for direct proxy HTTPS.
+    existingSecret: ''
+  trustedIPs: '' # Only set to actual trusted external load balancer CIDRs.
+  rateLimit:
+    minute: 100
+    authMinute: 10
+  maxBodyKilobytes: 16 # Matches shared/httpsecurity's 16 KiB limit.
+  headerBuffers: '4 8k'
+  connectTimeout: 5000
+  readTimeout: 15000
+  websocketReadTimeout: 75000 # Longer than application WebSocket ping intervals.
+  writeTimeout: 15000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  routes:
+    auth: ['/api/v1/auth']
+    post: ['/api/v1/posts', '/api/v1/users']
+    chat: ['/api/v1/chats']
+    notification: ['/api/v1/notifications']
+  healthPaths:
+    auth: /api/v1/auth/health
+    post: /api/v1/posts/health
+    chat: /api/v1/chats/health
+    notification: /api/v1/notifications/health

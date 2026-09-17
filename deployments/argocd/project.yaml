@@ -9,7 +9,7 @@ spec:
   - https://github.com/Khalid-Abdullahi-Isse/Nexora.git
   destinations:
   - server: https://kubernetes.default.svc
-    namespace: social-media-dev
+    namespace: social-media
   - server: https://kubernetes.default.svc
     namespace: social-media-staging
   - server: https://kubernetes.default.svc

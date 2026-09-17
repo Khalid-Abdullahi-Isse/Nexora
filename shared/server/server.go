@@ -12,7 +12,7 @@ import (
 )
 
 // Run drains HTTP requests before returning so callers can close dependency pools.
-func Run(address string, handler http.Handler) error {
+func Run(address string, handler http.Handler, beforeShutdown ...func()) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := &http.Server{Addr: address, Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 32 << 10}
@@ -22,6 +22,9 @@ func Run(address string, handler http.Handler) error {
 	case err := <-result:
 		return err
 	case <-ctx.Done():
+		for _, hook := range beforeShutdown {
+			hook()
+		}
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(shutdown); err != nil {

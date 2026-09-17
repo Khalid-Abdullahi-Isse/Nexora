@@ -12,15 +12,14 @@ Git repository → CI tests/builds → container registry
                                   └ auth / post / chat / notification
 ```
 
-Docker Compose remains the local application development workflow. Helm is the
+The primary local workflow is `./scripts/start-dev.sh` (kind, Helm and Kong). Docker Compose remains an alternative. Helm is the
 only Kubernetes manifest source; ArgoCD renders the chart and reconciles Git.
-ArgoCD does not execute `helm install` or build images. No CI workflow existed, so
-this change does not introduce one.
+ArgoCD does not execute `helm install` or build images. The existing backend CI validates the Helm chart and builds the service images.
 
 The chart is `deployments/helm/social-media-backend/`; Applications and the
 AppProject are in `deployments/argocd/`. Fixed Service names preserve application
-DNS. Use one release per namespace. There are four Deployments, two StatefulSets,
-six Services, two PVCs, one ServiceAccount, configuration, and a migration Job.
+DNS. Use one release per namespace. There are five Deployments, two StatefulSets,
+seven Services, two PVCs, one ServiceAccount, configuration, and a migration Job.
 
 All services use **one database, `social_media`**, with `app_auth`, `app_post`,
 `app_chat`, and `app_notification` roles. PostgreSQL initialization creates those
@@ -44,11 +43,29 @@ The working tree already contained extensive unrelated changes; they were preser
 Tracked-file signature checks found no private keys, common token signatures, or
 actual tracked `.env`/key files. This is not a full historical secrets audit.
 
-Removing repository YAML does **not** delete existing cluster resources. The old
-`social-media` namespace and all its data are retained. New Helm development uses
-`social-media-dev` and a fresh, separate database. Do not use `--take-ownership`,
-apply new selectors over the old StatefulSet, or delete old PVCs to migrate it.
-Moving existing data requires a reviewed backup/restore or resource adoption plan.
+## Local consolidation (2026-09-17)
+
+The cluster originally held unmanaged workloads in `social-media`, a separate
+Helm release `social-media` in `social-media-dev`, and an ArgoCD application
+`nexora` incorrectly targeting `default` and blocked on Pending PVCs.
+
+Development now uses **Helm release `nexora`, namespace `social-media`**.
+The old primary workload controllers were replaced because their immutable
+selectors differed from Helm; the same PostgreSQL and Redis PVCs and credentials
+were retained. Redis's Service was recreated as headless. SQL dumps, Redis files,
+resource/Secret snapshots and ArgoCD configuration were saved under ignored,
+private `.secrets/transition-20260917/`. Keep those backups private.
+
+The `social-media-dev` workloads are scaled to zero, with their Helm release and
+data retained. The old ArgoCD Application is paused (`skip-reconcile=true`,
+automated sync disabled); its incomplete resources in `default` remain retained.
+No database, PVC, namespace or cluster was deleted. Those archives are not started
+by the new workflow. Do not restart the old deployment helper from an older checkout.
+
+The startup preflight refuses unmanaged primary resources, another Helm release,
+or an ArgoCD application targeting `social-media`. It never performs automatic
+adoption or data migration. A new machine gets a fresh namespace; a preexisting
+unmanaged installation needs a reviewed, backed-up transition first.
 
 ## Docker Compose
 
@@ -71,15 +88,13 @@ SQL history; add a new sequential migration instead.
 Prerequisites: Docker, kind, kubectl, Helm 3 or 4, Python 3, OpenSSL. Run:
 
 ```bash
-./scripts/kind-deploy.sh
+./scripts/start-dev.sh
 ./scripts/kind-status.sh
 ```
 
 The helper checks tools/Docker, reuses `social-media`, starts stopped kind nodes,
 builds the existing Dockerfiles, loads all five `social-*:latest` images, creates
-local Secrets, and installs Helm into `social-media-dev`. It generates credentials
-once under ignored `.secrets/kind/` and reuses them; it never overwrites Compose
-credentials or the old namespace. It changes the kubeconfig's selected context to
+local Secrets, and installs Helm into `social-media`. Existing Kubernetes Secrets are authoritative and are never overwritten. On a fresh installation it generates credentials once under ignored `.secrets/kind/social-media/`. It refuses to generate new passwords over existing PVCs. It changes the kubeconfig's selected context to
 `kind-social-media`, and all operations explicitly target that context.
 
 Manual image load and install, **after provisioning Secrets**:
@@ -95,10 +110,10 @@ for service in auth post chat notification migrate; do
   kind load docker-image "social-$service:latest" --name social-media
 done
 
-helm upgrade --install social-media deployments/helm/social-media-backend \
+helm upgrade --install nexora deployments/helm/social-media-backend \
   -f deployments/helm/social-media-backend/values-dev.yaml \
-  --kube-context kind-social-media --namespace social-media-dev \
-  --create-namespace --wait --timeout 10m
+  --kube-context kind-social-media --namespace social-media \
+  --create-namespace --timeout 10m
 ```
 
 `values-dev.yaml` uses `imagePullPolicy: Never`; every node must have those images.
@@ -118,9 +133,8 @@ the Pod specification. Do not use timestamp values in ArgoCD templates.
 | `values-production.yaml` | Same security requirements; auth/post have two replicas |
 
 The Go loader supports `development`, `test`, and `production`, not `staging`;
-staging therefore runs with `APP_ENV=production`. Chat and notification remain at
-one replica: their current WebSocket scaffolding does not demonstrate cross-Pod
-fanout. Increase replicas only after validating application behavior.
+staging therefore runs with `APP_ENV=production`. Chat defaults to one replica and notification to two. Chat now supports Redis-backed
+cross-Pod fanout; see [chat service](CHAT_SERVICE.md). Notification supports REST and WebSockets.
 
 Per-service resources merge with `resources.defaults`; PostgreSQL, Redis and the
 migration Job have separate requests/limits. `postgres.storage` and `redis.storage`
@@ -160,11 +174,11 @@ Production database and Redis passwords must satisfy the application's minimum
 After the helper has generated local files, this illustrates provisioning:
 
 ```bash
-kubectl --context kind-social-media create namespace social-media-dev --dry-run=client -o yaml | kubectl --context kind-social-media apply -f -
-kubectl --context kind-social-media -n social-media-dev create secret generic social-media-backend-secrets \
-  --from-env-file=.secrets/kind/credentials.env --dry-run=client -o yaml | kubectl --context kind-social-media apply -f -
-kubectl --context kind-social-media -n social-media-dev create secret generic jwt-keys \
-  --from-file=.secrets/kind/public-keys.json --from-file=.secrets/kind/private.pem \
+kubectl --context kind-social-media create namespace social-media --dry-run=client -o yaml | kubectl --context kind-social-media apply -f -
+kubectl --context kind-social-media -n social-media create secret generic social-media-backend-secrets \
+  --from-env-file=.secrets/kind/social-media/credentials.env --dry-run=client -o yaml | kubectl --context kind-social-media apply -f -
+kubectl --context kind-social-media -n social-media create secret generic jwt-keys \
+  --from-file=.secrets/kind/social-media/public-keys.json --from-file=.secrets/kind/social-media/private.pem \
   --dry-run=client -o yaml | kubectl --context kind-social-media apply -f -
 ```
 
@@ -215,14 +229,12 @@ but require real hostnames, TLS Secrets, and an installed ingress controller.
 `className: nginx` is a configurable example, not an installed controller.
 Routes preserve `/api/v1/auth`, `/api/v1/posts`, `/api/v1/chats`, and
 `/api/v1/notifications`; there is no rewrite and no database/cache route.
-`/health` stays internal. There are currently no registered chat/notification
-WebSocket routes; templates cannot create missing application endpoints.
+`/health` stays internal. Chat registers `/api/v1/chats/ws`, already covered by the Kong chat prefix.
+Notification registers `/api/v1/notifications/ws`.
 
-When WebSocket handlers are implemented, add their actual paths through
-`ingress.routes`. Choose a controller supporting HTTP Upgrade and configure its
-idle/read timeouts through `ingress.annotations` (controller-specific). No chart
-rewrite rule strips WebSocket paths. Configure `TRUSTED_PROXIES` with actual proxy
-CIDRs and `ALLOWED_ORIGINS` with actual frontend origins, never a trust-all network.
+Kong preserves HTTP Upgrade headers for both WebSocket paths. Configure
+`TRUSTED_PROXIES` with actual proxy CIDRs and `ALLOWED_ORIGINS` with actual
+frontend origins. Never use a trust-all network.
 
 ## Migrations and ordering
 
@@ -234,8 +246,8 @@ with the existing migration guide, never blindly force a version or drop data.
 
 **ArgoCD:** use a full sync. Sync waves are:
 
-1. `-3`: ServiceAccount, ConfigMaps, Services and PVCs; external Secrets already exist.
-2. `-2`: PostgreSQL and Redis, waiting for healthy StatefulSets.
+1. `-3`: ServiceAccount, ConfigMaps and infrastructure Services; external Secrets already exist.
+2. `-2`: PVCs, PostgreSQL and Redis in the same wave (supports WaitForFirstConsumer), waiting for healthy StatefulSets.
 3. `-1`: migration `Sync` hook, waiting for PostgreSQL and running `all up`.
 4. `0`: application Deployments and ingress.
 
@@ -247,7 +259,7 @@ Pods continue serving during upgrades, so migrations must be backward compatible
 
 **Direct Helm:** post-install/post-upgrade hooks wait for PostgreSQL, run once per
 operation, and leave the completed Job for logs. The next operation replaces it.
-Use `--wait --timeout 10m`. Helm does not implement ArgoCD waves: applications can
+Use `--timeout 10m`, then `kubectl rollout status` for all Deployments and StatefulSets. The startup helper does this automatically. Avoid `--wait` with post-install hooks on a fresh schema: Helm waits for readiness before running that hook. Helm does not implement ArgoCD waves: applications can
 start before the migration hook, and health only checks dependency connectivity.
 Direct Helm is therefore the local workflow; do not direct public traffic to a
 fresh Helm install until the command succeeds. For production rollout ordering,
@@ -282,7 +294,7 @@ kubectl --context kind-social-media apply -f deployments/argocd/application-dev.
 
 The project restricts Git to that repository, destinations to the three application
 namespaces, and resource kinds to the chart's needs. Namespace creation is the only
-allowed cluster-scoped kind. Applications enable prune/self-heal; they intentionally
+allowed cluster-scoped kind. GitOps Applications enable prune/self-heal; they intentionally
 have no cascading-deletion finalizer. Do not have Helm CLI and ArgoCD manage the
 same release simultaneously. To move the tested dev release to ArgoCD, retain the
 same namespace, release name and values, review the first diff, then stop using the
@@ -301,24 +313,23 @@ script requires them to match if initialization changes.
 
 ```bash
 helm lint deployments/helm/social-media-backend
-helm template social-media deployments/helm/social-media-backend
+helm template nexora deployments/helm/social-media-backend
 # Requires Python 3 and PyYAML in addition to Helm:
 python3 scripts/validate-deployment.py
 bash -n scripts/kind-deploy.sh scripts/kind-status.sh
 
 ./scripts/kind-status.sh
-kubectl --context kind-social-media get pods,svc,statefulsets,jobs,pvc -n social-media-dev
-kubectl --context kind-social-media logs job/social-media-backend-migrate -c migrate -n social-media-dev
-kubectl --context kind-social-media port-forward svc/auth-service 8001:8001 -n social-media-dev
-# In another terminal:
-curl --fail http://localhost:8001/health
+kubectl --context kind-social-media get pods,svc,statefulsets,jobs,pvc -n social-media
+kubectl --context kind-social-media logs job/nexora-backend-migrate -c migrate -n social-media
+./scripts/kong-port-forward.sh
+curl --fail http://localhost:8000/api/v1/auth/health
 ```
 
-Post/chat/notification use ports 8003/8004/8005 respectively. Use another host port
-if Compose already occupies it. For in-cluster routing and all health endpoints:
+Post/chat/notification use internal ports 8003/8004/8005 respectively. For
+in-cluster routing and all health endpoints:
 
 ```bash
-kubectl --context kind-social-media exec -n social-media-dev deployment/auth-service -c auth -- sh -ec '
+kubectl --context kind-social-media exec -n social-media deployment/auth-service -c auth -- sh -ec '
 for endpoint in auth-service:8001 post-service:8003 chat-service:8004 notification-service:8005; do
   wget -q -O - "http://$endpoint/health"; echo
 done'
@@ -327,8 +338,8 @@ done'
 Helm-only rollback (first inspect history and database compatibility):
 
 ```bash
-helm history social-media --kube-context kind-social-media -n social-media-dev
-helm rollback social-media REVISION --kube-context kind-social-media -n social-media-dev --wait --timeout 10m
+helm history nexora --kube-context kind-social-media -n social-media
+helm rollback nexora REVISION --kube-context kind-social-media -n social-media --wait --timeout 10m
 ```
 
 For GitOps, revert the image/config commit in Git and let ArgoCD synchronize. Do
@@ -339,13 +350,13 @@ Use backward-compatible expand/contract changes and take backups before risky SQ
 ## Troubleshooting
 
 ```bash
-kubectl --context kind-social-media describe pod <pod-name> -n social-media-dev
-kubectl --context kind-social-media logs <pod-name> -n social-media-dev -c <container-name>
-kubectl --context kind-social-media logs <pod-name> -n social-media-dev -c <container-name> --previous
-kubectl --context kind-social-media logs <pod-name> -n social-media-dev -c wait-dependencies
-kubectl --context kind-social-media describe job social-media-backend-migrate -n social-media-dev
-kubectl --context kind-social-media get events -n social-media-dev --sort-by=.metadata.creationTimestamp
-kubectl --context kind-social-media describe pvc postgres-data redis-data -n social-media-dev
+kubectl --context kind-social-media describe pod <pod-name> -n social-media
+kubectl --context kind-social-media logs <pod-name> -n social-media -c <container-name>
+kubectl --context kind-social-media logs <pod-name> -n social-media -c <container-name> --previous
+kubectl --context kind-social-media logs <pod-name> -n social-media -c wait-dependencies
+kubectl --context kind-social-media describe job social-media-backend-migrate -n social-media
+kubectl --context kind-social-media get events -n social-media --sort-by=.metadata.creationTimestamp
+kubectl --context kind-social-media describe pvc postgres-data redis-data -n social-media
 ```
 
 `ErrImageNeverPull`: load images on every kind node. `Pending` PVCs: verify the
@@ -363,7 +374,7 @@ and [Helm chart hooks](https://helm.sh/docs/topics/charts_hooks/).
 - Helm lint and semantic render validation passed for base, dev, staging and
   production values in both Helm and ArgoCD modes.
 - Kubernetes server-side dry-run accepted the development resources.
-- Fresh Helm installation and repeated upgrades succeeded in `social-media-dev`;
+- Fresh Helm installation and repeated upgrades succeeded in `social-media`;
   rerun migrations reported `no change` for all five histories.
 - All four Service DNS health checks returned database/Redis connected.
 - Production application mode was exercised locally with temporary certificates:
@@ -404,3 +415,64 @@ publicly without configuring authentication and trusted TLS. The remote `main`
 branch must contain `deployments/helm/social-media-backend/Chart.yaml` before the
 dev Application can render and synchronize. Local working-tree changes alone are
 invisible to ArgoCD.
+
+
+## Chat rollout performed on 2026-09-16
+
+Local context `kind-social-media`, namespace `social-media`, Helm release
+`social-media` revision **6** now runs `social-chat:chat-v1-20260916`.
+The migration image is `social-migrate:chat-v1-20260916`.
+
+For this existing release, the Helm migration template supports optional
+`migration.helmHook: post-install,pre-upgrade` and `migration.jobName` overrides.
+The rollout used `social-media-backend-migrate-chat-v1-20260916`, retaining the
+previous migration job and running migration 000003 before updating chat pods.
+Default hook behavior and ArgoCD hook ordering remain unchanged. Use a new unique
+job name for another rollout when retaining prior job resources is required.
+
+Existing Helm values were reused; only chat/migration image tags and migration
+hook settings were overridden. Other service pods were not restarted. A database
+backup was saved locally with mode 0600 before migration. Migration version is 3,
+dirty=false. Live verification through Kong used real auth-service registration
+and login, then conversation creation, authenticated WebSocket messaging, a read
+receipt and REST history. All four gateway health endpoints passed. Two unique
+verification accounts and their test conversation were retained. No existing data
+or previous migration job was deleted.
+
+This was a local Helm rollout. No Git push or ArgoCD synchronization was performed.
+
+## Switching ownership deliberately
+
+Do not apply `application-dev.yaml` while using `start-dev.sh`: both target
+`social-media` / release `nexora`. Publish the chart first, provision Secrets and
+images independently, review the ArgoCD diff, stop manual Helm updates, and only
+then enable GitOps reconciliation. The paused live application still points at
+`default`; changing it is a separate migration, not part of normal startup.
+Templates never depend on startup-script output; GitOps uses ordinary existing
+Secrets and published images. The development image setting `Never` requires
+images on every destination node, or explicit registry-image overrides.
+
+`./scripts/stop-dev.sh` stops only the recorded forward. Logs and process identity
+are under `.secrets/dev/`. If another forward or Docker Compose owns port 8000,
+inspect `ss -ltnp '( sport = :8000 )'` and stop it yourself. No reset script is
+provided because normal startup must preserve cluster data.
+
+## Verified on the local cluster
+
+On 2026-09-17, the `start-dev.sh` workflow deployed `nexora` in `social-media`.
+All five Deployments and both StatefulSets became ready; migrations completed.
+The original PostgreSQL and Redis PVC UIDs and volume bindings were unchanged.
+
+Checks passed: Helm lint/render/semantic checks in four environments and both
+ownership modes, Postman validation (41 routes, six collections), cluster/node
+checks, and live gateway smoke tests for auth, post CRUD, notifications, CORS,
+request limits and authenticated HTTP 101 upgrades on both WebSocket paths.
+The smoke test retains one generated account and deletes its temporary post.
+Stop/start, forward reuse, occupied-port rejection, stale PID handling and workflow
+locking were exercised. No application Go source was changed for this workflow.
+A brand-new cluster was not created during verification; the existing data-bearing
+cluster was reused. ArgoCD rendering is validated, but a live GitOps sync is not
+performed while manual Helm owns the namespace.
+
+Helm post-install ordering reference:
+[Helm hooks](https://docs.helm.sh/docs/topics/charts_hooks/).

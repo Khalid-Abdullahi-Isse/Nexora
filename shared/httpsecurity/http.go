@@ -25,7 +25,13 @@ func Middleware() gin.HandlerFunc {
 		requestContext, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 		defer cancel()
 		c.Request = c.Request.WithContext(requestContext)
-		id := uuid.NewString()
+		id := c.GetHeader("X-Request-ID")
+		// Correlation is diagnostic only, never an authentication identity.
+		// Accept only canonical UUIDs to bound untrusted input in logs/headers.
+		if parsed, err := uuid.Parse(id); err != nil || parsed.String() != id {
+			id = uuid.NewString()
+		}
+		c.Request.Header.Set("X-Request-ID", id)
 		c.Header("X-Request-ID", id)
 		c.Header("X-Content-Type-Options", "nosniff")
 		c.Header("Cache-Control", "no-store")

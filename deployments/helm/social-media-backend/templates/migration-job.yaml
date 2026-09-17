@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "social.name" . }}-migrate
+  name: {{ default (printf "%s-migrate" (include "social.name" .)) .Values.migration.jobName }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "social.labels" . | nindent 4 }}
@@ -13,8 +13,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "-1"
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
     {{- else }}
-    # Post-install can see new infrastructure; successful jobs remain for logs.
-    helm.sh/hook: post-install,post-upgrade
+    # Post-install bootstraps new infrastructure. Existing releases may opt
+    # into pre-upgrade ordering and a unique jobName to retain previous jobs.
+    helm.sh/hook: {{ default "post-install,post-upgrade" .Values.migration.helmHook | quote }}
     helm.sh/hook-weight: "0"
     helm.sh/hook-delete-policy: before-hook-creation
     {{- end }}
