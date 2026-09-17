@@ -23,6 +23,8 @@ var (
 const MaxContentLength = 10000
 
 type Database interface {
+	LikePost(context.Context, uuid.UUID, uuid.UUID) error
+	CommentPost(context.Context, uuid.UUID, uuid.UUID, string) (uuid.UUID, error)
 	CreatePost(context.Context, *models.Post) error
 	GetPost(context.Context, uuid.UUID) (models.Post, error)
 	ListPosts(context.Context, *uuid.UUID, int, int) ([]models.Post, int64, error)
@@ -130,4 +132,23 @@ func (s *Service) DeletePost(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	return s.database.DeletePost(ctx, id, user)
+}
+
+func (s *Service) LikePost(ctx context.Context, id uuid.UUID) error {
+	user, err := actor(ctx, "posts.create")
+	if err != nil {
+		return err
+	}
+	return s.database.LikePost(ctx, user, id)
+}
+func (s *Service) CommentPost(ctx context.Context, id uuid.UUID, content string) (uuid.UUID, error) {
+	user, err := actor(ctx, "posts.create")
+	if err != nil {
+		return uuid.Nil, err
+	}
+	ch := Changes{Content: &content}
+	if err = validate(&ch); err != nil {
+		return uuid.Nil, err
+	}
+	return s.database.CommentPost(ctx, user, id, *ch.Content)
 }

@@ -9,6 +9,7 @@ x-service-env: &service-env
   POSTGRES_DB: social_media
   POSTGRES_SSLMODE: disable
   REDIS_ADDR: redis://:${REDIS_PASSWORD:?Redis password required}@redis:6379/0
+  NOTIFICATION_STREAM: ${NOTIFICATION_STREAM:-events:notifications}
   RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
   RATE_LIMIT_GLOBAL_REQUESTS: ${RATE_LIMIT_GLOBAL_REQUESTS:-100}
   RATE_LIMIT_GLOBAL_WINDOW: ${RATE_LIMIT_GLOBAL_WINDOW:-1m}
@@ -227,6 +228,15 @@ services:
     environment:
       <<: *service-env
       NOTIFICATION_SERVICE_PORT: 8005
+      NOTIFICATION_CONSUMER_GROUP: ${NOTIFICATION_CONSUMER_GROUP:-notification-service}
+      NOTIFICATION_RETRY_IDLE: ${NOTIFICATION_RETRY_IDLE:-30s}
+      NOTIFICATION_MAX_ATTEMPTS: ${NOTIFICATION_MAX_ATTEMPTS:-10}
+      NOTIFICATION_PAGE_SIZE: ${NOTIFICATION_PAGE_SIZE:-30}
+      WS_SEND_QUEUE: ${WS_SEND_QUEUE:-64}
+      WS_MAX_CONNECTIONS_PER_USER: ${WS_MAX_CONNECTIONS_PER_USER:-8}
+      WS_PING_INTERVAL: ${WS_PING_INTERVAL:-25s}
+      WS_PONG_TIMEOUT: ${WS_PONG_TIMEOUT:-60s}
+      WS_WRITE_TIMEOUT: ${WS_WRITE_TIMEOUT:-5s}
       POSTGRES_USER: app_notification
       POSTGRES_PASSWORD: ${NOTIFICATION_DATABASE_PASSWORD:?Runtime password required}
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
@@ -239,7 +249,7 @@ services:
       redis: {condition: service_healthy}
     networks: [social-network, gateway-network]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8005/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8005/ready || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
-NS="${1:-social-media-dev}"
+NS="${1:-social-media}"
 k() { kubectl --context kind-social-media "$@"; }
 command -v kubectl >/dev/null || { echo 'kubectl is required.' >&2; exit 1; }
 status=0

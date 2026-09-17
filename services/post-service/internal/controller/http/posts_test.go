@@ -194,3 +194,12 @@ func TestSanitizedFailure(t *testing.T) {
 		t.Fatal(w.Code, w.Body.String())
 	}
 }
+
+func (m *memoryRepo) LikePost(_ context.Context, user, id uuid.UUID) error {
+	_, err := m.GetPost(context.Background(), id)
+	return err
+}
+func (m *memoryRepo) CommentPost(_ context.Context, user, id uuid.UUID, content string) (uuid.UUID, error) {
+	_, err := m.GetPost(context.Background(), id)
+	return uuid.New(), err
+}

@@ -18,6 +18,8 @@ func RegisterRoutes(router *gin.Engine, controller *Controller) {
 	}
 	protected := api.Group("", verifier.Middleware())
 	protected.POST("/posts", controller.CreatePost)
+	protected.POST("/posts/:id/likes", controller.LikePost)
+	protected.POST("/posts/:id/comments", controller.CommentPost)
 	protected.PATCH("/posts/:id", controller.UpdatePost)
 	protected.DELETE("/posts/:id", controller.DeletePost)
 }

@@ -7,7 +7,7 @@ export PATH="$HOME/.local/bin:$PATH"
 export KIND_EXPERIMENTAL_PROVIDER=docker
 CLUSTER=social-media
 CONTEXT=kind-social-media
-NS=social-media-dev
+NS=social-media
 k() { kubectl --context "$CONTEXT" "$@"; }
 fail() { echo "Error: $*" >&2; exit 1; }
 for command in docker kind kubectl helm python3 openssl; do
@@ -26,7 +26,10 @@ else
   done < <(docker ps -aq --filter "label=io.x-k8s.kind.cluster=$CLUSTER" --filter status=exited)
 fi
 kind export kubeconfig --name "$CLUSTER" >/dev/null
+k cluster-info
 k wait --for=condition=Ready node --all --timeout=180s
+python3 scripts/dev-preflight.py
+python3 -c "import yaml" || fail 'Python PyYAML is required.'
 
 for service in auth post chat notification migrate; do
   dockerfile="docker/$service-service.Dockerfile"
@@ -49,18 +52,25 @@ KONG_IMAGE="$(python3 -c 'import yaml; print(yaml.safe_load(open("deployments/he
 docker pull "$KONG_IMAGE"
 load_image "$KONG_IMAGE"
 
+# Existing Secrets are authoritative: never replace live database credentials.
+credentials="$(k -n "$NS" get secret social-media-backend-secrets --ignore-not-found -o name)"
+jwt="$(k -n "$NS" get secret jwt-keys --ignore-not-found -o name)"
+if [[ -z "$credentials" || -z "$jwt" ]]; then
+  [[ -z "$credentials" && -z "$jwt" ]] || fail 'Only one required Secret exists; restore the missing Secret before deploying.'
+  claims="$(k -n "$NS" get pvc --no-headers 2>/dev/null)"
+  [[ -z "$claims" ]] || fail 'Existing PVCs found without credentials. Restore matching Secrets; do not generate new passwords.'
 # Generate once, reuse on subsequent deployments. Never source .env as shell code.
 # These independent kind credentials do not modify the Compose development setup.
-if [[ ! -f .secrets/kind/credentials.env ]]; then
+if [[ ! -f .secrets/kind/social-media/credentials.env ]]; then
   existing_secret="$(k -n "$NS" get secret social-media-backend-secrets --ignore-not-found -o name)"
-  [[ -z "$existing_secret" ]] || fail 'Restore .secrets/kind/credentials.env: cluster credentials already exist.'
+  [[ -z "$existing_secret" ]] || fail 'Restore .secrets/kind/social-media/credentials.env: cluster credentials already exist.'
 fi
 umask 077
 python3 - <<'PY'
 from pathlib import Path
 import json, os, secrets, subprocess
 from urllib.parse import quote
-p = Path('.secrets/kind')
+p = Path('.secrets/kind/social-media')
 p.mkdir(parents=True, exist_ok=True, mode=0o700)
 env = p / 'credentials.env'
 if not env.exists():
@@ -73,7 +83,7 @@ if not env.exists():
 private = p / 'private.pem'
 if not private.exists():
     if (p / 'public-keys.json').exists():
-        raise SystemExit('Private key missing; restore .secrets/kind/private.pem before deploying.')
+        raise SystemExit('Private key missing; restore .secrets/kind/social-media/private.pem before deploying.')
     subprocess.run(['openssl', 'genrsa', '-out', str(private), '3072'], check=True, stdout=subprocess.DEVNULL)
 public = subprocess.check_output(['openssl', 'rsa', '-in', str(private), '-pubout'], stderr=subprocess.DEVNULL).decode()
 (p / 'public-keys.json').write_text(json.dumps({'development-1': public}))
@@ -81,11 +91,17 @@ for file in p.iterdir():
     if file.is_file(): os.chmod(file, 0o600)
 PY
 k create namespace "$NS" --dry-run=client -o yaml | k apply -f -
-k -n "$NS" create secret generic social-media-backend-secrets --from-env-file=.secrets/kind/credentials.env --dry-run=client -o yaml | k apply -f -
-k -n "$NS" create secret generic jwt-keys --from-file=.secrets/kind/public-keys.json --from-file=.secrets/kind/private.pem --dry-run=client -o yaml | k apply -f -
-helm upgrade --install social-media deployments/helm/social-media-backend \
+k -n "$NS" create secret generic social-media-backend-secrets --from-env-file=.secrets/kind/social-media/credentials.env --dry-run=client -o yaml | k apply -f -
+k -n "$NS" create secret generic jwt-keys --from-file=.secrets/kind/social-media/public-keys.json --from-file=.secrets/kind/social-media/private.pem --dry-run=client -o yaml | k apply -f -
+fi
+helm upgrade --install nexora deployments/helm/social-media-backend \
   --kube-context "$CONTEXT" --namespace "$NS" --create-namespace \
   -f deployments/helm/social-media-backend/values-dev.yaml \
   --set-string "rolloutVersion=$(date -u +%Y%m%dT%H%M%SZ)" \
-  --wait --timeout 10m
+  --timeout 10m
+# Hooks complete before rollout checks; --wait can deadlock a fresh database
+# when application readiness requires schema installed by a post-install hook.
+for workload in statefulset/postgres statefulset/redis deployment/auth-service deployment/post-service deployment/chat-service deployment/notification-service deployment/kong-gateway; do
+  k -n "$NS" rollout status "$workload" --timeout=300s
+done
 k -n "$NS" get pods,services,jobs,pvc

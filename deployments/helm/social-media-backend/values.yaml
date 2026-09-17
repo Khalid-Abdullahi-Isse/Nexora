@@ -43,12 +43,18 @@ services:
     resources: {}
   notification:
     enabled: true
-    replicas: 1
+    replicas: 2
     port: 8005
     databaseUser: app_notification
     passwordKey: NOTIFICATION_DATABASE_PASSWORD
     resources: {}
 config:
+  NOTIFICATION_STREAM: events:notifications
+  NOTIFICATION_CONSUMER_GROUP: notification-service
+  NOTIFICATION_RETRY_IDLE: 30s
+  NOTIFICATION_MAX_ATTEMPTS: '10'
+  NOTIFICATION_PAGE_SIZE: '30'
+  WS_PONG_TIMEOUT: 60s
   WS_MAX_MESSAGE_SIZE: '16384'
   CHAT_MESSAGE_MAX_LENGTH: '4096'
   WS_SEND_QUEUE: '64'
@@ -139,7 +145,7 @@ postgres:
   sslmode: disable
   adminUser: postgres
   storage:
-    size: 10Gi
+    size: 2Gi
     storageClass: ''
     existingClaim: ''
   tls:
@@ -166,7 +172,7 @@ redis:
   port: 6379
   appendonly: true
   storage:
-    size: 2Gi
+    size: 1Gi
     storageClass: ''
     existingClaim: ''
   tls:
@@ -244,6 +250,7 @@ kong:
   headerBuffers: '4 8k'
   connectTimeout: 5000
   readTimeout: 15000
+  websocketReadTimeout: 75000 # Longer than application WebSocket ping intervals.
   writeTimeout: 15000
   resources:
     requests:

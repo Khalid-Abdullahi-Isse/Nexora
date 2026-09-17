@@ -1,137 +1,116 @@
-# Postman API Collection
+# Postman API collections through Kong
 
-## Kong Gateway (current Compose/Kubernetes workflow)
+Import `collections/kong-gateway.postman_collection.json` and an environment from
+`environments/`. `social-media-backend.postman_collection.json` contains the same
+complete API inventory under the original collection filename. Both use Kong's
+single `base_url`, defaulting to `http://localhost:8000`.
 
-Import `collections/kong-gateway.postman_collection.json` and use
-`http://localhost:8000` for every request. Run `./scripts/kong-port-forward.sh`
-for kind. This collection includes login, refresh, authenticated requests and posts.
-See [API Gateway](../docs/API_GATEWAY.md) for exact headers, bodies and routing.
+All **41 implemented routes** are covered, including the two WebSocket handshake
+references. Focused auth, post, chat and notification collections use the same
+variable names and gateway URLs.
 
-The collection documented below is the older registration/health-only collection
-for standalone service debugging. Its direct host ports are not published by the
-current Docker Compose setup.
+| Service | Routes | Coverage |
+| --- | ---: | --- |
+| Auth | 13 | Health, registration, login, refresh, CSRF, identity, sessions, password, logout, admin roles |
+| Post | 10 | Health/readiness, feed, user posts, create/read/update/delete, likes, comments |
+| Chat | 10 | Health/readiness, conversations, messages, read receipts, delete, WebSocket |
+| Notification | 8 | Health/readiness, list, unread count, mark read/all, delete, WebSocket |
 
+## Setup and authentication
 
-## Overview
+For the existing kind deployment, run `./scripts/kong-port-forward.sh`. For Compose,
+follow [API Gateway](../docs/API_GATEWAY.md). Kong exposes application traffic on
+8000; port 8001 is Kong Admin, not the auth application.
 
-This collection covers **every implemented HTTP route** in Social Media Backend:
+1. Import a collection and select `local` or `docker`. Both point at Kong on localhost.
+2. Run **05 - Health Checks** for a read-only check of all four services and the
+   three implemented readiness endpoints. Auth has no separate `/ready` route.
+3. Set `email` and `password` privately in the selected environment. Register a new
+   account if needed, then run Login and Authenticated user in **01 - Auth Service**.
+4. Run the desired service folder or individual request.
 
-| Microservice | Local / Docker host port | Implemented routes | Requests in service folder |
-| --- | --- | --- | --- |
-| auth-service | 8001 | `GET /health`, `POST /api/v1/auth/register` | 3 (including validation error) |
-| post-service | 8003 | `GET /health` | 1 |
-| chat-service | 8004 | `GET /health` | 1 |
-| notification-service | 8005 | `GET /health` | 1 |
+Login and refresh capture `access_token` and `csrf_token` into collection variables.
+Authenticated user captures `user_id`. Keep Postman's cookie jar enabled: refresh,
+CSRF bootstrap and logout use the HttpOnly refresh cookie; there is no JSON refresh
+token. `origin` must match a configured allowed frontend origin. Login, refresh,
+CSRF bootstrap and cookie logout send Origin and X-CSRF-Protection; refresh and
+cookie logout also send X-CSRF-Token.
 
-There are five distinct routes and ten runnable requests: six in isolated service folders and four convenience copies in **05 - Health Checks**. Saved 400 and 409 registration responses are documented examples, not live captures. No speculative endpoints are included.
+Environments deliberately omit captured token/ID keys so blank environment values
+do not override collection captures. When switching environments or accounts, clear
+old collection tokens/IDs and log in again. Focused collections have independent
+variables: copy an access token privately from a login collection when using them.
+Never commit credentials, populated exports or tokens. Use ignored `*.local.json`
+environment files and `postman/results/` for local exports/reports.
 
-The source of truth is `services/<service>/internal/controller/http/routes.go`, together with `router.go`, `controller.go`, `request.go`, `response.go`, service logic and `cmd/server/main.go`. Ports come from `shared/Envfolder/EnvLoader.go`, `.env.example` and `docker/docker-compose.yml`. No local `.env`, Kubernetes deployment manifests or deployed domains were present during inspection.
+Development, staging and production URLs are `example.com` placeholders. Replace
+`base_url`, `ws_base_url` and `origin` with your deployed gateway/frontend addresses.
+The former per-service URL templates have been replaced with gateway templates;
+native standalone service debugging requires overriding request URLs yourself.
 
-## Import
+## Request prerequisites and execution
 
-1. Open Postman.
-2. Import `collections/social-media-backend.postman_collection.json`.
-3. Import a template from `environments/`.
-4. Select that environment.
-5. Start the required services and their dependencies.
-6. Run **05 - Health Checks**, or an individual service's Health request.
+- Post creation captures `post_id` and `user_id`. The Post folder includes positive
+  requests and explicit validation/authentication failures. Likes and comments run
+  before deletion; the final GET checks that the deleted post returns 404.
+- Chat requires `participant_id` for another existing account. Creating a direct
+  conversation captures `conversation_id`; sending a message captures `message_id`.
+  Conversation/message operations require membership and `chats.member` permission.
+- Notification listing captures the first `notification_id` when available. An empty
+  inbox cannot supply an ID for mark-read/delete. Generate an event from another
+  account (for example, liking your post or sending you a message), then list again.
+- **06 - Session mutations** contains individual operations that revoke sessions or
+  change credentials. Supply `session_id` explicitly for revocation and
+  `new_password` for password changes. Log in again after invalidating your session.
+- **07 - Admin roles** requires `admin_access_token` from a recently authenticated
+  admin with `admin.users.manage`, plus existing `target_user_id` and `role_id` UUIDs.
+- Registration creates a persistent account; no account deletion endpoint exists.
+  Rate limits still apply, including registration limits. Respect Retry-After.
 
-## Environments
-
-- **local**: native Go processes on localhost, ports 8001, 8003, 8004 and 8005 (the configured defaults).
-- **docker** (legacy template): assumes direct localhost ports 8001, 8003, 8004 and 8005; use the gateway collection for the current Compose setup. Docker DNS names such as `auth-service` are not reachable from ordinary host Postman. For a runner inside `social-network`, override service base URLs with the corresponding Compose DNS name and container port.
-- **development**, **staging**, **production**: HTTPS `*.example.com` placeholder domains, explicitly labeled in the environment names. Replace these with your actual deployment addresses before use. For current gateway deployments, use the Kong collection above.
-
-All service base URLs are **origins without a trailing slash or API prefix**. For example, `authBaseUrl={{protocol}}://{{host}}:8001`. This keeps `/health` unversioned and registration at `{{authBaseUrl}}/api/{{apiVersion}}/auth/register`.
-
-The collection pre-request script recursively resolves URL templates into request-local variables, validates missing/circular references, and leaves saved environment templates intact. It only resolves the selected request's dependencies. Avoid defining environment keys again as globals, collection variables or runner data columns unless you deliberately want to override them.
-
-## Authentication
-
-All current endpoints are public and explicitly use **No Auth**. Empty secret-typed `accessToken`, `refreshToken`, `adminAccessToken` and `userAccessToken` variables are reserved for future APIs. Roles, permissions and sessions exist in the auth domain, but no login, refresh, logout, role administration or authorization middleware is exposed. **There is no automatic token capture yet because no implemented response returns a token.** Registration returns an account, not a session.
-
-When token endpoints are implemented, inspect their actual response DTOs, add success-only extraction to their post-response scripts, and use Bearer `{{accessToken}}` on protected requests/folders. Keep public requests on No Auth. Do not infer token fields or role names from the database models.
-
-## Registration and dynamic IDs
-
-Set `registerEmail` to a fresh test email and `registerPassword` to a private test password in your selected environment. Both templates are blank. Email must be valid and at most 255 characters. Password must satisfy the DTO's 8–72-character binding and the service's 8–72-byte limit; ASCII avoids that distinction. No name or role field is accepted.
-
-Run **02 - Register Account**. The pre-request script serializes credentials as JSON, so special characters are escaped safely. On HTTP 201, tests validate the response contract and save `data.id` as `userId`. A new attempt clears an old `userId` first to prevent accidental reuse after failure. Other IDs are omitted because no other create API exists. No current read/update/delete endpoint consumes `userId`.
-
-Run **03 - Registration Validation Error** to exercise HTTP 400 with an empty body. To check HTTP 409 manually, resend a previously successful email; the normal registration tests will correctly fail because that request expects 201. Its saved response examples describe the 400/409 contracts without duplicating a conflict request.
-
-Registration is limited by default to **three attempts per IP per ten minutes**, including invalid and duplicate attempts. HTTP 429 includes `Retry-After`. Redis failure may cause 503. Wait for the advertised interval; do not reset rate-limit keys to make tests pass. Every successful registration persists a test account; no deletion endpoint exists for cleanup. Running the entire collection therefore needs registration inputs and creates an account. Use the Health Checks folder for a read-only smoke run.
-
-## Updating service URLs
-
-To move auth to port 9001, change only `authBaseUrl` from `{{protocol}}://{{host}}:8001` to `{{protocol}}://{{host}}:9001`. All auth requests and its health-check copy follow the change. To move every service to another machine, change `host` once. To change the common transport, change `protocol` once. Individual base URLs can instead contain a complete independent address.
-
-Change `apiVersion` once when the backend actually implements a new version. It cannot make an unsupported backend version exist. A per-service reverse-proxy mount can be included in that service's base URL if it fronts both health and API paths. If a future deployment routes health separately, introduce a service-specific health base variable then.
-
-## Running individual microservices
-
-From the repository root, start only the desired Compose service and its declared dependencies:
-
-```sh
-docker compose -f docker/docker-compose.yml up -d --build auth-service
-```
-
-Select **01 - Auth Service** in Postman. Other API services are not required. Compose starts Redis, PostgreSQL and the migration job because those are declared dependencies. Its migration job processes all service schemas; review the existing migration README before initial startup on an existing database.
-
-For native execution, configure the backend environment and run, for example:
+Run selected folders, not the entire collection as a single end-to-end scenario:
+admin operations, session invalidation, a populated inbox and a second chat account
+have separate prerequisites.
 
 ```sh
-go run ./services/auth-service/cmd/server
-```
-
-All four current binaries require Redis. Auth also initializes PostgreSQL. When native Go uses Compose PostgreSQL, set the backend's `POSTGRES_PORT=15432`; the native default is 5432. Postman only needs the HTTP service addresses, never database credentials.
-
-## Running the full system
-
-```sh
-docker compose -f docker/docker-compose.yml up -d --build
-npx --yes newman@6.2.1 run postman/collections/social-media-backend.postman_collection.json \
+node postman/validate.mjs
+npx newman run postman/collections/kong-gateway.postman_collection.json \
   -e postman/environments/docker.postman_environment.json \
   --folder '05 - Health Checks' --timeout-request 5000
 ```
 
-Run commands from the repository root. A successful health test checks HTTP 200, JSON, service identity, `status=ok`, Redis connectivity and, for auth, PostgreSQL connectivity. Health failures are not treated as successful smoke checks. There is no gateway or meaningful cross-service end-to-end flow yet; registration is the only business HTTP operation.
-
-To run the auth folder in Newman, create a private environment copy ending in `.local.json`, populate the registration inputs there, and pass its path with `-e` and `--folder '01 - Auth Service'`. To retain captured IDs across separate Newman invocations, use `--export-environment postman/environments/run.local.json`. Store reports under ignored `postman/results/`. Do not overwrite the committed safe templates with populated exports.
-
 ## WebSockets
 
-Chat and notification contain placeholder WebSocket controller/client/hub files. They have no upgrade handler, registered URL, authentication method, events or message wire format. Constructors are instantiated but no WebSocket handler is mounted. No `chatWsUrl` or fake handshake request is included. Document these contracts and add the appropriate Postman WebSocket workflow when they are implemented.
+**08 - WebSocket references** documents HTTP upgrade headers. Collection Runner
+cannot exercise native WebSocket frames. Create a native WebSocket request at:
 
-## Issues and implementation gaps
+- `{{ws_base_url}}/api/v1/chats/ws`, subprotocol `chat.v1`
+- `{{ws_base_url}}/api/v1/notifications/ws`, subprotocol `notifications.v1`
 
-- Auth registration is the only business route. Login/refresh/logout, profile/follow APIs, post/comment/like APIs, chat and notification operations remain unimplemented despite domain and persistence models.
-- Chat, post and notification reserve `/api/v1/chats`, `/api/v1/posts`, and `/api/v1/notifications` groups without any handlers; requesting those prefixes does not access an API. User has no API group yet.
-- No gateway, media service or admin HTTP API exists. No 401/403 resource tests or invented 404 resource route is included.
-- All four current health endpoints exist; configured HTTP ports and Docker mappings agree. No duplicate registered routes were found.
-- Post/chat/notification use placeholder nil PostgreSQL persistence wiring. Their health verifies Redis only and does not prove database readiness.
-- During this task, another process deleted `services/user-service/` after its health endpoint had been verified. The final collection follows the current source tree and excludes this service. `go.work`, Compose (build and migration mounts), and environment examples still reference the deleted directory/service. Workspace builds and Compose rebuilds need those references reconciled by the ongoing backend work; this task does not modify them. The existing user container can still respond on port 8002 despite its source being absent.
-- Current production templates are placeholders, not evidence of a deployed or production-ready system.
+Use `Authorization: Bearer {{access_token}}`. Never put tokens or user IDs in query
+strings. See [Chat service](../docs/CHAT_SERVICE.md) and
+[Notification service](../docs/NOTIFICATION_SERVICE.md) for frame formats and browser
+subprotocol authentication.
 
-## Maintenance and security
+## Maintenance and validation
 
-Keep the collection JSON as the editable source of truth. To add a service, inspect its mounted routes, create its own folder and base URL in all five environments, and add a health convenience request only if a real endpoint exists. Update DTO bodies, exact expected statuses and successful ID/token extraction alongside backend changes. Keep the two copies of each health request synchronized. Extend this inventory and run `node postman/validate.mjs` to detect route coverage drift.
+Mounted Go `routes.go` files and their handlers are the source of truth. Update the
+focused collection and both complete collections when adding endpoints. Run
+`node postman/validate.mjs` to check full route coverage, request scripts, variable
+references and blank secrets in every collection/environment. Existing focused
+validator commands delegate to the same full check.
 
-Never commit populated passwords, tokens or private exports. Secret typing masks values in the UI; it does not encrypt exported JSON. `.gitignore` excludes `*.local.json` environment copies, `postman/secrets/`, `postman/results/` and `*.postman-secrets.json` while retaining the five blank templates.
+Kong routes are maintained in Helm and generated for Compose:
 
-Postman references: [variable scripting](https://learning.postman.com/latest-v-12/docs/tests-and-scripts/write-scripts/postman-sandbox-reference/pm-variables) and [collection schema](https://schema.postman.com/).
+```sh
+python3 scripts/render-kong-compose.py
+python3 scripts/render-kong-compose.py --check
+python3 scripts/validate-deployment.py
+```
 
-## Verification results
+Health/readiness aliases rewrite to each upstream's `/health` or `/ready`; business
+paths are forwarded unchanged. Static checks do not prove that a running deployment
+has the latest backend images or gateway declaration.
 
-Verified on 2026-09-11 against existing local Docker containers, without rebuilding services or modifying backend code:
-
-- Official Postman v2.1 JSON schema validation passed.
-- JavaScript syntax, environment variable resolution, independent URL overrides and API-version changes passed.
-- All initially running health endpoints returned 200; the final four-service health folder was rerun after the source-tree change.
-- Auth folder: 3 requests and 9 assertions passed (health, 201 registration with UUID capture, 400 validation).
-- A separate duplicate registration returned 409 `EMAIL_EXISTS`; exported `userId` was confirmed.
-- One new test account remains because the API provides no delete operation. Temporary credentials and populated verification exports were removed.
-- Login, token refresh and resource read/update/delete cannot be exercised because those routes do not exist. Live results describe the running containers, which may differ from concurrently edited source.
-
-Chat REST collection: `collections/chat-service.postman_collection.json`.
-WebSocket URL, authentication and event examples: [Chat service](../docs/CHAT_SERVICE.md).
+Local kind workflow: run `./scripts/start-dev.sh` from the backend root and select
+Local or Development (`base_url=http://localhost:8000`). All requests, including
+chat and notifications, use Kong. Stop forwarding with `./scripts/stop-dev.sh`.

@@ -1,101 +1,112 @@
 {
   "info": {
-    "_postman_id": "77827186-9106-54d1-867a-e3a4e9232d6f",
-    "name": "Social Media Backend API",
+    "name": "Social Media Backend \u2014 All APIs through Kong",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "All five implemented HTTP routes across four services. No login, refresh, CRUD, gateway or WebSocket endpoints exist yet. Service base URLs are origins (without /api/v1); all versioned routes use apiVersion. See postman/README.md for setup, limitations and maintenance."
+    "description": "All implemented routes through Kong. See postman/README.md for prerequisites, cookie authentication and native WebSocket testing."
   },
-  "auth": {
-    "type": "noauth"
-  },
-  "event": [
+  "variable": [
     {
-      "listen": "prerequest",
-      "script": {
-        "type": "text/javascript",
-        "exec": [
-          "// Resolve nested environment templates into request-local variables only.",
-          "// Process this request's URL dependencies; other services need not be configured.",
-          "function resolve(value, stack) {",
-          "    return String(value).replace(/{{([a-zA-Z][a-zA-Z0-9]*)}}/g, (_, key) => {",
-          "        if (stack.includes(key)) throw new Error(\"Circular variable: \" + key);",
-          "        const value = pm.variables.get(key);",
-          "        if (value === undefined || value === null || value === \"\") throw new Error(\"Missing variable: \" + key);",
-          "        const resolved = resolve(value, stack.concat(key));",
-          "        pm.variables.set(key, resolved);",
-          "        return resolved;",
-          "    });",
-          "}",
-          "const resolvedUrl = resolve(pm.request.url.toString(), []);",
-          "if (/{{|}}/.test(resolvedUrl)) throw new Error(\"Unresolved URL variable\");",
-          "if (!/^https?:\\/\\//.test(resolvedUrl)) throw new Error(\"Base URLs must use http or https\");"
-        ]
-      }
+      "key": "base_url",
+      "value": "http://localhost:8000"
     },
     {
-      "listen": "test",
-      "script": {
-        "type": "text/javascript",
-        "exec": [
-          "pm.test(\"Response is JSON\", () => pm.response.to.be.json);"
-        ]
-      }
+      "key": "ws_base_url",
+      "value": "ws://localhost:8000"
+    },
+    {
+      "key": "origin",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "new_password",
+      "value": ""
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "csrf_token",
+      "value": ""
+    },
+    {
+      "key": "admin_access_token",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "target_user_id",
+      "value": ""
+    },
+    {
+      "key": "role_id",
+      "value": ""
+    },
+    {
+      "key": "session_id",
+      "value": ""
+    },
+    {
+      "key": "post_id",
+      "value": ""
+    },
+    {
+      "key": "participant_id",
+      "value": ""
+    },
+    {
+      "key": "conversation_id",
+      "value": ""
+    },
+    {
+      "key": "message_id",
+      "value": ""
+    },
+    {
+      "key": "notification_id",
+      "value": ""
     }
   ],
   "item": [
     {
       "name": "01 - Auth Service",
-      "description": "Only implemented routes from services/auth-service. Registration is public; authentication APIs are not implemented.",
       "item": [
         {
-          "name": "01 - Health",
-          "request": {
-            "method": "GET",
-            "auth": {
-              "type": "noauth"
-            },
-            "header": [],
-            "url": "{{authBaseUrl}}/health",
-            "description": "GET /health in services/auth-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis and PostgreSQL."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy auth-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"auth-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    pm.expect(body.database).to.eql(\"connected\");",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "response": []
-        },
-        {
-          "name": "02 - Register Account",
+          "name": "Register",
           "request": {
             "method": "POST",
-            "auth": {
-              "type": "noauth"
-            },
+            "url": "{{base_url}}/api/v1/auth/register",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{origin}}"
+              },
+              {
+                "key": "X-CSRF-Protection",
+                "value": "1"
               }
             ],
-            "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
-            "description": "Creates an auth account only; no profile or tokens are returned. Set registerEmail and registerPassword in the selected environment. Email: required valid address, max 255. Password: 8\u201372 bytes (ASCII avoids rune/byte ambiguity). Reusing an existing email returns 409. Source: auth-service HTTP request.go, controller.go, response.go and service/user_service.go.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{{registerBody}}",
+              "raw": "{{credentials_body}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -104,133 +115,51 @@
             }
           },
           "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            },
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.environment.unset(\"userId\");",
-                  "const email = pm.variables.get(\"registerEmail\");",
-                  "const password = pm.variables.get(\"registerPassword\");",
-                  "if (!email || !password) throw new Error(\"Set registerEmail and registerPassword in the selected environment before registering.\");",
-                  "// Serialize values so quotes/backslashes in credentials cannot break JSON.",
-                  "pm.variables.set(\"registerBody\", JSON.stringify({email, password}));"
+                  "pm.variables.set(\"credentials_body\", JSON.stringify({email: pm.variables.get(\"email\"), password: pm.variables.get(\"password\")}));"
                 ]
               }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"HTTP 201\", () => pm.response.to.have.status(201));",
-                  "pm.test(\"Account contract and ID capture\", () => {",
-                  "    pm.response.to.have.status(201);",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.success).to.eql(true);",
-                  "    pm.expect(body.data.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);",
-                  "    pm.expect(body.data.email).to.eql(pm.variables.get(\"registerEmail\").trim().toLowerCase());",
-                  "    pm.expect(body.data.status).to.eql(\"active\");",
-                  "    pm.expect(Number.isNaN(Date.parse(body.data.created_at))).to.eql(false);",
-                  "    pm.expect(body.data).not.to.have.property(\"password\");",
-                  "    pm.expect(body.data).not.to.have.property(\"password_hash\");",
-                  "    pm.environment.set(\"userId\", body.data.id);",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "response": [
-            {
-              "name": "400 - VALIDATION_ERROR (documented contract)",
-              "originalRequest": {
-                "method": "POST",
-                "auth": {
-                  "type": "noauth"
-                },
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
-                "description": "Creates an auth account only; no profile or tokens are returned. Set registerEmail and registerPassword in the selected environment. Email: required valid address, max 255. Password: 8\u201372 bytes (ASCII avoids rune/byte ambiguity). Reusing an existing email returns 409. Source: auth-service HTTP request.go, controller.go, response.go and service/user_service.go.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{{registerBody}}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Bad Request",
-              "code": 400,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"VALIDATION_ERROR\",\n    \"message\": \"Invalid email or password\"\n  }\n}"
-            },
-            {
-              "name": "409 - EMAIL_EXISTS (documented contract)",
-              "originalRequest": {
-                "method": "POST",
-                "auth": {
-                  "type": "noauth"
-                },
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
-                "description": "Creates an auth account only; no profile or tokens are returned. Set registerEmail and registerPassword in the selected environment. Email: required valid address, max 255. Password: 8\u201372 bytes (ASCII avoids rune/byte ambiguity). Reusing an existing email returns 409. Source: auth-service HTTP request.go, controller.go, response.go and service/user_service.go.",
-                "body": {
-                  "mode": "raw",
-                  "raw": "{{registerBody}}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "status": "Conflict",
-              "code": 409,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"EMAIL_EXISTS\",\n    \"message\": \"Email already exists\"\n  }\n}"
             }
           ]
         },
         {
-          "name": "03 - Registration Validation Error",
+          "name": "Login",
           "request": {
             "method": "POST",
-            "auth": {
-              "type": "noauth"
-            },
+            "url": "{{base_url}}/api/v1/auth/login",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
+              },
+              {
+                "key": "Origin",
+                "value": "{{origin}}"
+              },
+              {
+                "key": "X-CSRF-Protection",
+                "value": "1"
               }
             ],
-            "url": "{{authBaseUrl}}/api/{{apiVersion}}/auth/register",
-            "description": "Intentionally omits required fields. Does not create an account, but consumes a registration rate-limit attempt.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{}",
+              "raw": "{{credentials_body}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -244,35 +173,198 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
-                  "pm.test(\"Validation error contract\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.success).to.eql(false);",
-                  "    pm.expect(body.error.code).to.eql(\"VALIDATION_ERROR\");",
-                  "    pm.expect(body.error.message).to.eql(\"Invalid email or password\");",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "  pm.collectionVariables.set(\"csrf_token\", data.csrf_token);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"credentials_body\", JSON.stringify({email: pm.variables.get(\"email\"), password: pm.variables.get(\"password\")}));"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
+        },
+        {
+          "name": "Authenticated user",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/auth/me",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const value = pm.response.json().data.id;",
+                  "  if (value) pm.collectionVariables.set(\"user_id\", value);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Restore CSRF token",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/csrf",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{origin}}"
+              },
+              {
+                "key": "X-CSRF-Protection",
+                "value": "1"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const value = pm.response.json().data.csrf_token;",
+                  "  if (value) pm.collectionVariables.set(\"csrf_token\", value);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh session",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/refresh",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{origin}}"
+              },
+              {
+                "key": "X-CSRF-Protection",
+                "value": "1"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json().data;",
+                  "  pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "  pm.collectionVariables.set(\"csrf_token\", data.csrf_token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List sessions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/auth/sessions",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
       "name": "02 - Post Service",
-      "description": "Only implemented routes from services/post-service. Only health is implemented; domain models do not imply HTTP APIs.",
       "item": [
         {
-          "name": "01 - Health",
+          "name": "Create post",
           "request": {
-            "method": "GET",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts",
             "auth": {
-              "type": "noauth"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "header": [],
-            "url": "{{postBaseUrl}}/health",
-            "description": "GET /health in services/post-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"My first post from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "event": [
             {
@@ -280,36 +372,435 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy post-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"post-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    ",
-                  "});"
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) { const post = pm.response.json().data; pm.collectionVariables.set(\"post_id\", post.id); pm.collectionVariables.set(\"user_id\", post.user_id); }"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
+        },
+        {
+          "name": "List feed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/posts?page=1&limit=20",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get post",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Posts by user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/users/{{user_id}}/posts?page=1&limit=20",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update post",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Updated from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set image",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": \"https://example.com/image.jpg\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Clear image",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_url\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject owner injection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Must be rejected\",\n  \"user_id\": \"00000000-0000-0000-0000-000000000001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reject missing authentication",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Must be rejected\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Like post",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}/likes"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Comment on post",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}/comments",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"content\": \"Great post!\"}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete own post",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 204\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deleted post is missing",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/api/v1/posts/{{post_id}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
       "name": "03 - Chat Service",
-      "description": "Only implemented routes from services/chat-service. Only health is implemented; domain models do not imply HTTP APIs.",
       "item": [
         {
-          "name": "01 - Health",
+          "name": "Create direct conversation",
           "request": {
-            "method": "GET",
-            "auth": {
-              "type": "noauth"
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/chats/conversations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"participantId\": \"{{participant_id}}\"\n}"
             },
-            "header": [],
-            "url": "{{chatBaseUrl}}/health",
-            "description": "GET /health in services/chat-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
           },
           "event": [
             {
@@ -317,36 +808,218 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy chat-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"chat-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    ",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set(\"conversation_id\", pm.response.json().data.id);"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
+        },
+        {
+          "name": "List conversations",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/chats/conversations?limit=30",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get conversation",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/chats/conversations/{{conversation_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Message history",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/chats/conversations/{{conversation_id}}/messages?limit=30",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Send message",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/chats/conversations/{{conversation_id}}/messages",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": \"Hello\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) pm.collectionVariables.set(\"message_id\", pm.response.json().data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark read",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/chats/messages/{{message_id}}/read",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete own message",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/chats/messages/{{message_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
       "name": "04 - Notification Service",
-      "description": "Only implemented routes from services/notification-service. Only health is implemented; domain models do not imply HTTP APIs.",
       "item": [
         {
-          "name": "01 - Health",
+          "name": "List notifications",
           "request": {
             "method": "GET",
-            "auth": {
-              "type": "noauth"
-            },
             "header": [],
-            "url": "{{notificationBaseUrl}}/health",
-            "description": "GET /health in services/notification-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/notifications?page=1&limit=30"
           },
           "event": [
             {
@@ -354,36 +1027,143 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy notification-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"notification-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    ",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));",
+                  "if (pm.response.code === 200) { const data = pm.response.json(); pm.test(\"Paginated items\", () => pm.expect(data.items).to.be.an(\"array\")); if (data.items.length) pm.collectionVariables.set(\"notification_id\", data.items[0].id); }"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
+        },
+        {
+          "name": "Unread count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/notifications/unread-count"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark notification read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/notifications/{{notification_id}}/read"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mark all read",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/notifications/read-all"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete notification",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/notifications/{{notification_id}}"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
     {
       "name": "05 - Health Checks",
-      "description": "Convenience copies of the four public health requests. No registration or credentials needed. Keep these synchronized with each service health request.",
       "item": [
         {
-          "name": "Auth Health",
+          "name": "auth health",
           "request": {
             "method": "GET",
+            "url": "{{base_url}}/api/v1/auth/health",
+            "header": [],
             "auth": {
               "type": "noauth"
-            },
-            "header": [],
-            "url": "{{authBaseUrl}}/health",
-            "description": "GET /health in services/auth-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis and PostgreSQL."
+            }
           },
           "event": [
             {
@@ -391,30 +1171,21 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy auth-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"auth-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    pm.expect(body.database).to.eql(\"connected\");",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
         },
         {
-          "name": "Post Health",
+          "name": "posts health",
           "request": {
             "method": "GET",
+            "url": "{{base_url}}/api/v1/posts/health",
+            "header": [],
             "auth": {
               "type": "noauth"
-            },
-            "header": [],
-            "url": "{{postBaseUrl}}/health",
-            "description": "GET /health in services/post-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+            }
           },
           "event": [
             {
@@ -422,30 +1193,21 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy post-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"post-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    ",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
         },
         {
-          "name": "Chat Health",
+          "name": "posts readiness",
           "request": {
             "method": "GET",
+            "url": "{{base_url}}/api/v1/posts/ready",
+            "header": [],
             "auth": {
               "type": "noauth"
-            },
-            "header": [],
-            "url": "{{chatBaseUrl}}/health",
-            "description": "GET /health in services/chat-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+            }
           },
           "event": [
             {
@@ -453,30 +1215,21 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy chat-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"chat-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    ",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
         },
         {
-          "name": "Notification Health",
+          "name": "chats health",
           "request": {
             "method": "GET",
+            "url": "{{base_url}}/api/v1/chats/health",
+            "header": [],
             "auth": {
               "type": "noauth"
-            },
-            "header": [],
-            "url": "{{notificationBaseUrl}}/health",
-            "description": "GET /health in services/notification-service/internal/controller/http/routes.go. Public, unversioned, exempt from rate limits. Startup health checks Redis. PostgreSQL is not initialized by this service yet."
+            }
           },
           "event": [
             {
@@ -484,19 +1237,399 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
-                  "pm.test(\"Healthy notification-service\", () => {",
-                  "    const body = pm.response.json();",
-                  "    pm.expect(body.status).to.eql(\"ok\");",
-                  "    pm.expect(body.service).to.eql(\"notification-service\");",
-                  "    pm.expect(body.redis).to.eql(\"connected\");",
-                  "    ",
-                  "});"
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
                 ]
               }
             }
-          ],
-          "response": []
+          ]
+        },
+        {
+          "name": "chats readiness",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/chats/ready",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "notifications health",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/notifications/health",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "notifications readiness",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/api/v1/notifications/ready",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 - Session mutations (run individually)",
+      "item": [
+        {
+          "name": "Revoke selected session",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/auth/sessions/{{session_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change password (invalidates sessions)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/change-password",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{password_body}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.variables.set(\"password_body\", JSON.stringify({current_password: pm.variables.get(\"password\"), new_password: pm.variables.get(\"new_password\")}));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout all sessions",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/logout-all",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout current cookie session",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/api/v1/auth/logout",
+            "header": [
+              {
+                "key": "Origin",
+                "value": "{{origin}}"
+              },
+              {
+                "key": "X-CSRF-Protection",
+                "value": "1"
+              },
+              {
+                "key": "X-CSRF-Token",
+                "value": "{{csrf_token}}"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 - Admin roles (run individually)",
+      "item": [
+        {
+          "name": "Assign role",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/api/v1/auth/admin/users/{{target_user_id}}/roles/{{role_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Requires admin role, admin.users.manage permission and authentication within five minutes. Supply existing target user and role UUIDs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Remove role",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/api/v1/auth/admin/users/{{target_user_id}}/roles/{{role_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "Requires admin role, admin.users.manage permission and authentication within five minutes. Supply existing target user and role UUIDs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 - WebSocket references (use native client)",
+      "item": [
+        {
+          "name": "Chat WebSocket handshake reference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Connection",
+                "value": "Upgrade"
+              },
+              {
+                "key": "Upgrade",
+                "value": "websocket"
+              },
+              {
+                "key": "Sec-WebSocket-Version",
+                "value": "13"
+              },
+              {
+                "key": "Sec-WebSocket-Key",
+                "value": "dGhlIHNhbXBsZSBub25jZQ=="
+              },
+              {
+                "key": "Sec-WebSocket-Protocol",
+                "value": "chat.v1"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/chats/ws",
+            "description": "Create a native Postman WebSocket request at {{ws_base_url}}/api/v1/chats/ws with Authorization: Bearer {{access_token}} and Sec-WebSocket-Protocol: chat.v1. HTTP Collection Runner cannot verify frames. See docs/CHAT_SERVICE.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(101));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "WebSocket connection \u2014 handshake reference",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Connection",
+                "value": "Upgrade"
+              },
+              {
+                "key": "Upgrade",
+                "value": "websocket"
+              },
+              {
+                "key": "Sec-WebSocket-Version",
+                "value": "13"
+              },
+              {
+                "key": "Sec-WebSocket-Key",
+                "value": "dGhlIHNhbXBsZSBub25jZQ=="
+              },
+              {
+                "key": "Sec-WebSocket-Protocol",
+                "value": "notifications.v1"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "url": "{{base_url}}/api/v1/notifications/ws",
+            "description": "Use a NEW WebSocket request in Postman at {{ws_base_url}}/api/v1/notifications/ws with Authorization: Bearer {{access_token}}. This HTTP entry documents the handshake; Collection Runner cannot exercise realtime frames. Do not pass userId or JWT in the URL. See docs/NOTIFICATION_SERVICE.md."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Expected status\", () => pm.response.to.have.status(101));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

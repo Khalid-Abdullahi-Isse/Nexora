@@ -76,6 +76,22 @@ services:
         methods: [GET, OPTIONS]
         regex_priority: 100
         strip_path: true
+  - name: chat-ready
+    host: chat-service
+    port: 8004
+    protocol: http
+    path: /ready
+    connect_timeout: 5000
+    read_timeout: 15000
+    write_timeout: 15000
+    retries: 0
+    routes:
+      - name: chat-ready
+        paths:
+          - "~/api/v1/chats/ready$"
+        methods: [GET, OPTIONS]
+        regex_priority: 100
+        strip_path: true
   - name: notification-service
     host: notification-service
     port: 8005
@@ -88,6 +104,14 @@ services:
       - name: notification-api
         paths:
           - "~/api/v1/notifications(?:/|$)"
+        strip_path: false
+        preserve_host: false
+      # HTTP Upgrade is handled by Kong; preserve the service's authenticated path.
+      - name: notification-websocket
+        paths:
+          - '~/api/v1/notifications/ws$'
+        methods: [GET]
+        regex_priority: 50
         strip_path: false
         preserve_host: false
   - name: notification-health
@@ -103,6 +127,22 @@ services:
       - name: notification-health
         paths:
           - "~/api/v1/notifications/health$"
+        methods: [GET, OPTIONS]
+        regex_priority: 100
+        strip_path: true
+  - name: notification-ready
+    host: notification-service
+    port: 8005
+    protocol: http
+    path: /ready
+    connect_timeout: 5000
+    read_timeout: 15000
+    write_timeout: 15000
+    retries: 0
+    routes:
+      - name: notification-ready
+        paths:
+          - "~/api/v1/notifications/ready$"
         methods: [GET, OPTIONS]
         regex_priority: 100
         strip_path: true
@@ -134,6 +174,22 @@ services:
       - name: post-health
         paths:
           - "~/api/v1/posts/health$"
+        methods: [GET, OPTIONS]
+        regex_priority: 100
+        strip_path: true
+  - name: post-ready
+    host: post-service
+    port: 8003
+    protocol: http
+    path: /ready
+    connect_timeout: 5000
+    read_timeout: 15000
+    write_timeout: 15000
+    retries: 0
+    routes:
+      - name: post-ready
+        paths:
+          - "~/api/v1/posts/ready$"
         methods: [GET, OPTIONS]
         regex_priority: 100
         strip_path: true

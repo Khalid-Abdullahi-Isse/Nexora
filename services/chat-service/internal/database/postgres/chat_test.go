@@ -57,6 +57,10 @@ func TestChatAPIIntegration(t *testing.T) {
 	if e != nil || m.SenderUserID.String() != a.UserID {
 		t.Fatal(e)
 	}
+	var notificationCount int64
+	if err := tx.Table("chat_notification_outbox").Where("payload->>'recipientId'=? AND payload->>'eventType'='chat.message.created' AND payload->'metadata'->>'messageId'=?", b.UserID, m.ID.String()).Count(&notificationCount).Error; err != nil || notificationCount != 1 {
+		t.Fatal("message outbox", notificationCount, err)
+	}
 	if _, e = repo.Send(ctx, x, c.ID.String(), "attack"); !errors.Is(e, ownership.ErrNotFound) {
 		t.Fatal("nonmember send", e)
 	}

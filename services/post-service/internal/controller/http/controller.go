@@ -14,6 +14,8 @@ import (
 
 // Service is the business-layer boundary available to HTTP controllers.
 type Service interface {
+	LikePost(context.Context, uuid.UUID) error
+	CommentPost(context.Context, uuid.UUID, string) (uuid.UUID, error)
 	CreatePost(context.Context, service.Changes) (models.Post, error)
 	GetPost(context.Context, uuid.UUID) (models.Post, error)
 	ListPosts(context.Context, *uuid.UUID, int, int) ([]models.Post, int64, error)

@@ -10,7 +10,7 @@ services:
     port: {{ $svc.port }}
     protocol: http
     connect_timeout: {{ $.Values.kong.connectTimeout }}
-    read_timeout: {{ $.Values.kong.readTimeout }}
+    read_timeout: {{ if or (eq $name "chat") (eq $name "notification") }}{{ $.Values.kong.websocketReadTimeout }}{{ else }}{{ $.Values.kong.readTimeout }}{{ end }}
     write_timeout: {{ $.Values.kong.writeTimeout }}
     retries: 0
     routes:
@@ -21,6 +21,16 @@ services:
         {{- end }}
         strip_path: false
         preserve_host: false
+      {{- if eq $name "notification" }}
+      # HTTP Upgrade is handled by Kong; preserve the service's authenticated path.
+      - name: notification-websocket
+        paths:
+          - '~/api/v1/notifications/ws$'
+        methods: [GET]
+        regex_priority: 50
+        strip_path: false
+        preserve_host: false
+      {{- end }}
       {{- if eq $name "auth" }}
       - name: auth-sensitive
         paths:
@@ -55,6 +65,24 @@ services:
         methods: [GET, OPTIONS]
         regex_priority: 100
         strip_path: true
+{{- if ne $name "auth" }}
+  - name: {{ $name }}-ready
+    host: {{ $name }}-service
+    port: {{ $svc.port }}
+    protocol: http
+    path: /ready
+    connect_timeout: {{ $.Values.kong.connectTimeout }}
+    read_timeout: {{ $.Values.kong.readTimeout }}
+    write_timeout: {{ $.Values.kong.writeTimeout }}
+    retries: 0
+    routes:
+      - name: {{ $name }}-ready
+        paths:
+          - {{ printf "~%s/ready$" (index $paths 0) | quote }}
+        methods: [GET, OPTIONS]
+        regex_priority: 100
+        strip_path: true
+{{- end }}
 {{- end }}
 {{- end }}
 plugins:

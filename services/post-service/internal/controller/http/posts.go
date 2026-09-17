@@ -132,3 +132,34 @@ func (h *Controller) DeletePost(c *gin.Context) {
 	}
 	c.Status(204)
 }
+
+func (h *Controller) LikePost(c *gin.Context) {
+	id, ok := parseID(c, "id", "INVALID_POST_ID")
+	if !ok {
+		return
+	}
+	if err := h.service.LikePost(c.Request.Context(), id); err != nil {
+		failure(c, err)
+		return
+	}
+	c.Status(204)
+}
+func (h *Controller) CommentPost(c *gin.Context) {
+	id, ok := parseID(c, "id", "INVALID_POST_ID")
+	if !ok {
+		return
+	}
+	var req struct {
+		Content string `json:"content"`
+	}
+	if httpsecurity.Decode(c, &req) != nil {
+		failure(c, service.ErrInvalid)
+		return
+	}
+	comment, err := h.service.CommentPost(c.Request.Context(), id, req.Content)
+	if err != nil {
+		failure(c, err)
+		return
+	}
+	c.JSON(201, gin.H{"id": comment})
+}

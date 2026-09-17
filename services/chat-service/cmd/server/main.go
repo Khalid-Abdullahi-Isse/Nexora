@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/notificationevents"
 	"log"
 	"os"
 	"sync/atomic"
@@ -70,6 +71,8 @@ func run() error {
 		return err
 	}
 	defer sqlDB.Close()
+	stopRelay := notificationevents.StartRelay(db, redisClient, "chat")
+	defer stopRelay()
 	postgres := postgresdatabase.New(db)
 	rt, err := config.LoadRealtime()
 	if err != nil {
@@ -120,5 +123,5 @@ func run() error {
 	}
 
 	fmt.Printf("Chat Service listening on port %s\n", cfg.Port)
-	return server.Run("0.0.0.0:"+cfg.Port, router, func() { draining.Store(true); hub.Close() })
+	return server.Run("0.0.0.0:"+cfg.Port, router, func() { draining.Store(true); stopRelay(); hub.Close() })
 }

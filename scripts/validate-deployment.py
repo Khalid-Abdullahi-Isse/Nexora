@@ -11,17 +11,20 @@ for env in ('default', 'dev', 'staging', 'production'):
     args = [] if env == 'default' else ['-f', str(CHART / f'values-{env}.yaml')]
     subprocess.run(['helm', 'lint', str(CHART), *args], check=True)
     for mode in ('helm', 'argocd'):
-        namespace = 'social-media-' + env
-        raw = subprocess.check_output(['helm', 'template', 'social-media', str(CHART), *args,
+        namespace = 'social-media' if env in ('default', 'dev') else 'social-media-' + env
+        raw = subprocess.check_output(['helm', 'template', 'nexora', str(CHART), *args,
                                        '--namespace', namespace, '--set', 'deploymentMode=' + mode], text=True)
         docs = [d for d in yaml.safe_load_all(raw) if d]
         index = {(d['kind'], d['metadata']['name']): d for d in docs}
         assert len(index) == len(docs), 'Duplicate resource names'
         assert all(d['metadata']['namespace'] == namespace for d in docs)
         assert len([d for d in docs if d['kind'] == 'StatefulSet']) == 2
+        for name in ('postgres', 'redis'):
+            assert index['PersistentVolumeClaim', name + '-data']['metadata']['annotations']['argocd.argoproj.io/sync-wave'] == index['StatefulSet', name]['metadata']['annotations']['argocd.argoproj.io/sync-wave'], 'WaitForFirstConsumer storage must share its consumer wave'
         pods = [d['spec']['template'] for d in docs if d['kind'] in ('Deployment', 'StatefulSet', 'Job')]
         for d in docs:
             if d['kind'] == 'Service':
+                assert d['spec']['type'] == 'ClusterIP', 'Services must remain internal'
                 matches = [p for p in pods if all(p['metadata']['labels'].get(k) == v for k, v in d['spec']['selector'].items())]
                 assert len(matches) == 1, d['metadata']['name']
                 ports = matches[0]['spec']['containers'][0]['ports']
@@ -51,7 +54,7 @@ for env in ('default', 'dev', 'staging', 'production'):
             main = spec['containers'][0]
             if 'ports' in main:
                 assert all(k in main for k in ('startupProbe', 'readinessProbe', 'livenessProbe'))
-            if main['name'] == 'post':
+            if main['name'] in ('post', 'notification'):
                 assert main['readinessProbe']['httpGet']['path'] == '/ready'
                 assert main['livenessProbe']['httpGet']['path'] == '/health'
             if main['name'] in ('auth', 'post', 'chat', 'notification', 'migrate') and env == 'dev':
@@ -67,6 +70,11 @@ for env in ('default', 'dev', 'staging', 'production'):
             assert service['host'] == name + '-service' and service['port'] == port
             assert service['routes'][0]['strip_path'] is False
             assert upstreams[name + '-health']['path'] == '/health'
+            if name != 'auth':
+                ready = upstreams[name + '-ready']
+                assert ready['path'] == '/ready'
+                assert ready['routes'][0]['strip_path'] is True
+                assert ready['routes'][0]['regex_priority'] == 100
         kong = index['Deployment', 'kong-gateway']['spec']['template']['spec']['containers'][0]
         kong_env = {v['name']: v['value'] for v in kong['env']}
         assert kong_env['KONG_DATABASE'] == 'off'
@@ -78,13 +86,13 @@ for env in ('default', 'dev', 'staging', 'production'):
         assert '*' not in plugins['cors']['origins']
         assert plugins['rate-limiting']['policy'] == 'local'
         assert plugins['request-size-limiting']['allowed_payload_size'] == 16
-        if ('Ingress', 'social-media-backend') in index:
-            paths = index['Ingress', 'social-media-backend']['spec']['rules'][0]['http']['paths']
+        if ('Ingress', 'nexora-backend') in index:
+            paths = index['Ingress', 'nexora-backend']['spec']['rules'][0]['http']['paths']
             assert len(paths) == 1 and paths[0]['backend']['service']['name'] == 'kong-gateway'
-        config = index['ConfigMap', 'social-media-backend-config']['data']
+        config = index['ConfigMap', 'nexora-backend-config']['data']
         assert config['POSTGRES_DB'] == 'social_media'
         assert config['POSTGRES_HOST'] == 'postgres'
-        job = index['Job', 'social-media-backend-migrate']
+        job = index['Job', 'nexora-backend-migrate']
         annotations = job['metadata']['annotations']
         if mode == 'argocd':
             assert annotations['argocd.argoproj.io/hook'] == 'Sync'
@@ -101,7 +109,7 @@ for overrides in (['--set', 'kong.rateLimit.minute=0'],
                   ['-f', str(CHART / 'values-production.yaml'), '--set', 'kong.admin.enabled=true'],
                   ['--set', 'postgres.database=another_database'],
                   ['-f', str(CHART / 'values-production.yaml'), '--set', 'images.auth.tag=latest']):
-    result = subprocess.run(['helm', 'template', 'social-media', str(CHART), *overrides], capture_output=True)
+    result = subprocess.run(['helm', 'template', 'nexora', str(CHART), *overrides], capture_output=True)
     assert result.returncode != 0, 'Expected invalid configuration to fail'
 for file in (ROOT / 'deployments/argocd').glob('application-*.yaml'):
     app = yaml.safe_load(file.read_text())
@@ -109,4 +117,7 @@ for file in (ROOT / 'deployments/argocd').glob('application-*.yaml'):
     assert (ROOT / source['path']).is_dir()
     assert all((ROOT / source['path'] / f).is_file() for f in source['helm']['valueFiles'])
     assert app['spec']['project'] == 'social-media'
+    if file.name == 'application-dev.yaml':
+        assert source['helm']['releaseName'] == 'nexora'
+        assert app['spec']['destination']['namespace'] == 'social-media'
 print('ArgoCD paths and negative configuration checks passed.')

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/notificationevents"
 	"log"
 	"os"
 	"time"
@@ -74,6 +75,8 @@ func run() error {
 		}
 	}()
 	log.Print("Post Service connected to PostgreSQL successfully")
+	stopRelay := notificationevents.StartRelay(db, redisClient, "post")
+	defer stopRelay()
 	postgres := postgresdatabase.New(db)
 	redis := redisdatabase.New(redisClient)
 	application := service.New(postgres, redis)
@@ -93,7 +96,7 @@ func run() error {
 	}
 
 	fmt.Printf("Post Service listening on port %s\n", cfg.Port)
-	err = server.Run("0.0.0.0:"+cfg.Port, router)
+	err = server.Run("0.0.0.0:"+cfg.Port, router, stopRelay)
 	log.Print("Post Service shutdown completed")
 	return err
 }

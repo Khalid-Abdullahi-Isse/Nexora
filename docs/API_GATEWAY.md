@@ -15,7 +15,7 @@ Postman / frontend → localhost:8000 → Kong
 ## Existing architecture and route map
 
 The existing chart is `deployments/helm/social-media-backend`. Its release is
-`social-media` in `social-media-dev` on `kind-social-media`. The separate
+`social-media` in `social-media` on `kind-social-media`. The separate
 `social-media` namespace is not changed. All service names below resolve in Kong's
 own namespace; no ClusterIP addresses are stored in configuration.
 
@@ -30,16 +30,22 @@ own namespace; no ClusterIP addresses are stored in configuration.
 | `/api/v1/posts/health` | post-service:8003 | `/health` |
 | `/api/v1/chats/health` | chat-service:8004 | `/health` |
 | `/api/v1/notifications/health` | notification-service:8005 | `/health` |
+| `/api/v1/posts/ready` | post-service:8003 | `/ready` |
+| `/api/v1/chats/ready` | chat-service:8004 | `/ready` |
+| `/api/v1/notifications/ready` | notification-service:8005 | `/ready` |
 
 API routes have `strip_path: false` and no upstream path. Exact health aliases use
 `strip_path: true` and upstream `/health`. Regex boundaries prevent `/postsXYZ`
 matching `/posts`. Sensitive POST auth routes take precedence over the general route.
 
-**Chat and notification business handlers are not implemented yet.** Their current
-Gin routers expose only `/health`; reserved business paths return 404. The existing
-chat prefix is plural `/chats`, not `/chat`. There is no separate user service:
-identity is `/api/v1/auth/me`, while user posts live in post-service. Listing posts
-is public; creating, editing and deleting posts require JWT authentication.
+Chat exposes authenticated conversations, message history/send/read/delete and
+`/api/v1/chats/ws`. Notifications expose listing, unread count, marking read,
+deletion and `/api/v1/notifications/ws`. Kong forwards WebSocket upgrades along
+with Authorization and subprotocol headers. See [Chat](CHAT_SERVICE.md) and
+[Notifications](NOTIFICATION_SERVICE.md) for contracts. Posts include authenticated
+likes and comments. Identity lives at `/api/v1/auth/me`; there is no user service.
+Health and readiness aliases take precedence over API resource paths. Auth has
+no separate readiness endpoint.
 
 ## Kubernetes: deploy and expose
 
@@ -48,43 +54,37 @@ sources, imports images, reuses credentials and persistent data, runs migrations
 and upgrades the existing Helm release:
 
 ```bash
-./scripts/kind-deploy.sh
+./scripts/start-dev.sh
 ```
 
 For configuration-only changes after images and credentials are available:
 
 ```bash
-helm upgrade --install social-media deployments/helm/social-media-backend \
-  --kube-context kind-social-media --namespace social-media-dev \
-  -f deployments/helm/social-media-backend/values-dev.yaml --wait --timeout 5m
+helm upgrade --install nexora deployments/helm/social-media-backend \
+  --kube-context kind-social-media --namespace social-media \
+  -f deployments/helm/social-media-backend/values-dev.yaml --timeout 10m
 ```
 
-**Run this whenever you want one endpoint for the backend; leave it running:**
-
-```bash
-kubectl --context kind-social-media -n social-media-dev \
-  port-forward svc/kong-gateway 8000:8000
-```
-
-Or run `./scripts/kong-port-forward.sh`. Postman base URL: `http://localhost:8000`.
-Port-forward binds loopback by default. Do not run Docker Kong on port 8000 at the
-same time. Reconnect the port-forward after a Kong pod rollout.
+Startup creates one managed background forward on `http://localhost:8000`.
+Stop it with `./scripts/stop-dev.sh`. The compatibility command
+`./scripts/kong-port-forward.sh` can restart forwarding without rebuilding.
+Do not run Docker Kong on port 8000 at the same time. Re-run startup or the
+forward helper after a Kong pod rollout ends its forward.
 
 ```bash
 kubectl --context kind-social-media get nodes
 kubectl --context kind-social-media get pods -A
-kubectl --context kind-social-media -n social-media-dev get pods,svc
-kubectl --context kind-social-media -n social-media-dev logs deployment/kong-gateway
-kubectl --context kind-social-media -n social-media-dev rollout status deployment/kong-gateway
+kubectl --context kind-social-media -n social-media get pods,svc
+kubectl --context kind-social-media -n social-media logs deployment/kong-gateway
+kubectl --context kind-social-media -n social-media rollout status deployment/kong-gateway
 curl http://localhost:8000/api/v1/auth/health
 ```
 
 Kong startup/readiness uses `/status/ready`; liveness uses `/status` on internal
 8100. These checks do not depend on application databases or upstream health.
-The proxy Service exposes only 8000 and 8443. In development Admin listens on the
-pod loopback only, with no Service. If needed, explicitly port-forward the pod:
-`kubectl --context kind-social-media -n social-media-dev port-forward deployment/kong-gateway 8001:8001`.
-Admin is disabled by default and rejected by chart validation in production.
+The proxy Service exposes only 8000 and 8443 internally. Admin is disabled
+in both base and development values; no Admin Service exists. Only proxy port
+8000 is forwarded to the host.
 
 ## Docker Compose
 
@@ -167,7 +167,7 @@ Content-Type: application/json
 Refresh/logout: POST `/api/v1/auth/refresh` or `/api/v1/auth/logout`, using the
 cookie jar plus `Origin`, `X-CSRF-Protection: 1`, and `X-CSRF-Token: <data.csrf_token>`.
 After refresh replace both tokens with the new response values. Logout returns 204.
-The collection also covers all four health endpoints and user-post listing.
+The collections cover all 41 mounted routes, including health/readiness, session and admin APIs, post interactions, chat, notifications and WebSocket references. See [Postman setup](../postman/README.md) for variables and folder prerequisites.
 
 ## Security and operational limits
 
@@ -221,7 +221,7 @@ class, real hostname, TLS Secret and HTTPS redirect settings for that controller
 
 Existing ArgoCD Application files already reference this chart and environment
 values. Commit/push these changes through your normal workflow to make them
-available to ArgoCD. Do not install a second release into `social-media-dev` or let
+available to ArgoCD. Do not install a second release into `social-media` or let
 Helm and ArgoCD independently reconcile that namespace. The local verification
 uses the existing Helm release; it does not change live ArgoCD ownership or push Git.
 
@@ -232,7 +232,7 @@ python3 scripts/validate-deployment.py
 python3 scripts/render-kong-compose.py --check
 helm lint deployments/helm/social-media-backend
 helm template social-media deployments/helm/social-media-backend \
-  -n social-media-dev -f deployments/helm/social-media-backend/values-dev.yaml
+  -n social-media -f deployments/helm/social-media-backend/values-dev.yaml
 python3 scripts/verify-kong.py
 ```
 
@@ -246,7 +246,7 @@ References: [Kong DB-less mode](https://developer.konghq.com/gateway/db-less-mod
 
 ## Verification on this workspace (2026-09-16)
 
-- Upgraded existing Helm release `social-media`, revision 5, in `social-media-dev`.
+- Upgraded existing Helm release `social-media`, revision 5, in `social-media`.
   Built current Go sources as `social-{auth,post,chat,notification,migrate}:kong-dev`;
   all application pods and Kong became Ready. The migration Job completed.
 - Parsed the generated declaration with the actual `kong:3.9.1` image.
@@ -278,4 +278,4 @@ References: [Kong DB-less mode](https://developer.konghq.com/gateway/db-less-mod
 Remaining deployment work outside local kind: restore Compose credentials if
 using Compose; commit/push the chart through the normal GitOps workflow; supply real
 production origins, image references, certificates and ingress/proxy trust settings.
-Chat and notification still need business API implementations as described above.
+Deploy current backend images and the updated gateway declaration to use the new chat, notification and readiness routes. The historical verification above predates these additions.

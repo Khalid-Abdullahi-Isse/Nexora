@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/services/chat-service/internal/models"
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/authn"
+	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/notificationevents"
 	"github.com/Khalid-Abdullahi-Isse/social-media-backend/shared/ownership"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -88,7 +89,20 @@ func (d *Database) Send(ctx context.Context, p authn.Principal, id, content stri
 		if e := tx.Create(&out).Error; e != nil {
 			return ownership.ErrDatabase
 		}
-		return tx.Model(&Conversation{}).Where("id=?", id).Update("updated_at", now).Error
+		if err := tx.Model(&Conversation{}).Where("id=?", id).Update("updated_at", now).Error; err != nil {
+			return err
+		}
+		var recipients []uuid.UUID
+		if err := tx.Model(&ConversationMember{}).Where("conversation_id=? AND left_at IS NULL AND user_id<>?", id, p.UserID).Pluck("user_id", &recipients).Error; err != nil {
+			return err
+		}
+		for _, recipient := range recipients {
+			event := notificationevents.Event{EventID: uuid.New(), EventType: "chat.message.created", RecipientID: recipient, ActorID: &out.SenderUserID, EntityID: &out.ConversationID, EntityType: "conversation", CreatedAt: now, Metadata: map[string]string{"messageId": out.ID.String()}}
+			if err := notificationevents.Enqueue(tx, "chat", event); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	return out, e
 }

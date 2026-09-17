@@ -1,16 +1,60 @@
 {
   "info": {
-    "name": "Post Service REST API",
+    "name": "Nexora post-service",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Use an Auth Service access token with posts permissions. IDs are UUIDs. Run sequentially; only the newly created post is deleted."
+    "description": "All implemented routes through Kong. See postman/README.md for prerequisites, cookie authentication and native WebSocket testing."
   },
   "variable": [
     {
-      "key": "post_base_url",
-      "value": "http://localhost:8003"
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "ws_base_url",
+      "value": "ws://localhost:8000"
+    },
+    {
+      "key": "origin",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "email",
+      "value": ""
+    },
+    {
+      "key": "password",
+      "value": ""
+    },
+    {
+      "key": "new_password",
+      "value": ""
     },
     {
       "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "csrf_token",
+      "value": ""
+    },
+    {
+      "key": "admin_access_token",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "target_user_id",
+      "value": ""
+    },
+    {
+      "key": "role_id",
+      "value": ""
+    },
+    {
+      "key": "session_id",
       "value": ""
     },
     {
@@ -18,55 +62,23 @@
       "value": ""
     },
     {
-      "key": "user_id",
+      "key": "participant_id",
+      "value": ""
+    },
+    {
+      "key": "conversation_id",
+      "value": ""
+    },
+    {
+      "key": "message_id",
+      "value": ""
+    },
+    {
+      "key": "notification_id",
       "value": ""
     }
   ],
   "item": [
-    {
-      "name": "Health",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{post_base_url}}/health",
-        "auth": {
-          "type": "noauth"
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Readiness",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": "{{post_base_url}}/ready",
-        "auth": {
-          "type": "noauth"
-        }
-      },
-      "event": [
-        {
-          "listen": "test",
-          "script": {
-            "type": "text/javascript",
-            "exec": [
-              "pm.test(\"Status 200\", () => pm.response.to.have.status(200));"
-            ]
-          }
-        }
-      ]
-    },
     {
       "name": "Create post",
       "request": {
@@ -77,7 +89,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{post_base_url}}/api/v1/posts",
+        "url": "{{base_url}}/api/v1/posts",
         "auth": {
           "type": "bearer",
           "bearer": [
@@ -116,7 +128,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{post_base_url}}/api/v1/posts?page=1&limit=20",
+        "url": "{{base_url}}/api/v1/posts?page=1&limit=20",
         "auth": {
           "type": "noauth"
         }
@@ -138,7 +150,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{post_base_url}}/api/v1/posts/{{post_id}}",
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}",
         "auth": {
           "type": "noauth"
         }
@@ -160,7 +172,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{post_base_url}}/api/v1/users/{{user_id}}/posts?page=1&limit=20",
+        "url": "{{base_url}}/api/v1/users/{{user_id}}/posts?page=1&limit=20",
         "auth": {
           "type": "noauth"
         }
@@ -187,7 +199,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{post_base_url}}/api/v1/posts/{{post_id}}",
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}",
         "auth": {
           "type": "bearer",
           "bearer": [
@@ -230,7 +242,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{post_base_url}}/api/v1/posts/{{post_id}}",
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}",
         "auth": {
           "type": "bearer",
           "bearer": [
@@ -273,7 +285,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{post_base_url}}/api/v1/posts/{{post_id}}",
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}",
         "auth": {
           "type": "bearer",
           "bearer": [
@@ -316,7 +328,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{post_base_url}}/api/v1/posts",
+        "url": "{{base_url}}/api/v1/posts",
         "auth": {
           "type": "bearer",
           "bearer": [
@@ -359,7 +371,7 @@
             "value": "application/json"
           }
         ],
-        "url": "{{post_base_url}}/api/v1/posts",
+        "url": "{{base_url}}/api/v1/posts",
         "auth": {
           "type": "noauth"
         },
@@ -386,11 +398,78 @@
       ]
     },
     {
+      "name": "Like post",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{access_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "header": [],
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}/likes"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Expected status\", () => pm.response.to.have.status(204));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Comment on post",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{access_token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}/comments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"content\": \"Great post!\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Expected status\", () => pm.response.to.have.status(201));"
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Delete own post",
       "request": {
         "method": "DELETE",
         "header": [],
-        "url": "{{post_base_url}}/api/v1/posts/{{post_id}}",
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}",
         "auth": {
           "type": "bearer",
           "bearer": [
@@ -419,7 +498,7 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{post_base_url}}/api/v1/posts/{{post_id}}",
+        "url": "{{base_url}}/api/v1/posts/{{post_id}}",
         "auth": {
           "type": "noauth"
         }
@@ -431,6 +510,50 @@
             "type": "text/javascript",
             "exec": [
               "pm.test(\"Status 404\", () => pm.response.to.have.status(404));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "posts health",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/posts/health",
+        "header": [],
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "posts readiness",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/v1/posts/ready",
+        "header": [],
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Expected status\", () => pm.response.to.have.status(200));"
             ]
           }
         }
